@@ -1,0 +1,23 @@
+# environments
+.venv/
+.venv-ocr/
+__pycache__/
+*.pyc
+cache/
+.DS_Store
+
+# datasets (own licences; rebuilt by scripts/prepare_data.py) and training runs
+data/
+runs/
+weights/*
+!weights/final/
+weights/final/*.pt.bak
+
+# SUMO: network and traffic are regenerated (see README)
+sumo/
+
+# images derived from the CC BY-NC-ND Indian test photos must not be redistributed
+reports/demo/
+reports/pipeline_demo_grid.jpg
+reports/label_check*.jpg
+reports/*.log

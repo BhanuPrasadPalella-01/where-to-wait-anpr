@@ -1,0 +1,88 @@
+[
+  {
+    "model": "fine-tuned",
+    "split": "test",
+    "n": 267,
+    "exact": 0.7566,
+    "char_acc": 0.9364,
+    "within_2": 0.9213,
+    "ms_per_plate_cpu": 5.45,
+    "examples": [
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV673"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ],
+      [
+        "MH47AV6753",
+        "MH12FT9458"
+      ],
+      [
+        "MH02DZ9898",
+        "ML989888"
+      ],
+      [
+        "MH02DZ9898",
+        "MH22B98288"
+      ],
+      [
+        "MH02BT6482",
+        "MH02BI6482"
+      ],
+      [
+        "MH02BT6482",
+        "MH02B16482"
+      ]
+    ]
+  },
+  {
+    "model": "fine-tuned+format",
+    "split": "test",
+    "n": 267,
+    "exact": 0.7566,
+    "char_acc": 0.9365,
+    "within_2": 0.9213,
+    "ms_per_plate_cpu": 4.12,
+    "examples": [
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV673"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ],
+      [
+        "MH47AV6753",
+        "MH12FT9458"
+      ],
+      [
+        "MH02DZ9898",
+        "ML989888"
+      ],
+      [
+        "MH02DZ9898",
+        "MH22B98288"
+      ],
+      [
+        "MH02BT6482",
+        "MH02BI6482"
+      ],
+      [
+        "MH02BT6482",
+        "MH02BI6482"
+      ]
+    ]
+  }
+]

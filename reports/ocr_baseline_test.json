@@ -1,0 +1,131 @@
+[
+  {
+    "model": "cct-s-v2-global-model",
+    "split": "test",
+    "n": 267,
+    "exact": 0.3296,
+    "char_acc": 0.8055,
+    "within_2": 0.7041,
+    "ms_per_plate_cpu": 41.35,
+    "examples": [
+      [
+        "MH43AF5037",
+        "MH43AF503"
+      ],
+      [
+        "MH43AF5037",
+        "MH43AF503"
+      ],
+      [
+        "MH43AF5037",
+        "MH43AF503"
+      ],
+      [
+        "MH01DB1477",
+        "MHO1DB1477"
+      ],
+      [
+        "MH01DB1477",
+        "MHO1DB147"
+      ],
+      [
+        "MH01DB1477",
+        "MHO1DB1477"
+      ],
+      [
+        "MH01DB1477",
+        "MHO1DB1477"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ]
+    ]
+  },
+  {
+    "model": "cct-xs-v2-global-model",
+    "split": "test",
+    "n": 267,
+    "exact": 0.4419,
+    "char_acc": 0.8379,
+    "within_2": 0.7903,
+    "ms_per_plate_cpu": 3.08,
+    "examples": [
+      [
+        "MH43AF5037",
+        "HH43AF5037"
+      ],
+      [
+        "MH43AF5037",
+        "HH43AF5037"
+      ],
+      [
+        "MH43AF5037",
+        "HH43AF5037"
+      ],
+      [
+        "MH01DB1477",
+        "MHO1DB1477"
+      ],
+      [
+        "MH01DB1477",
+        "MHO1DB1477"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ],
+      [
+        "MH47AV6753",
+        "MH47AV675"
+      ],
+      [
+        "MH47AV6753",
+        "M4557"
+      ]
+    ]
+  },
+  {
+    "model": "global-plates-mobile-vit-v2-model",
+    "split": "test",
+    "n": 267,
+    "exact": 0.03,
+    "char_acc": 0.4906,
+    "within_2": 0.1873,
+    "ms_per_plate_cpu": 2.52,
+    "examples": [
+      [
+        "MH43AF5037",
+        "MH43N535"
+      ],
+      [
+        "MH43AF5037",
+        "MH43N535"
+      ],
+      [
+        "MH43AF5037",
+        "MH43N535"
+      ],
+      [
+        "MH43AF5037",
+        "MH43N53Z"
+      ],
+      [
+        "MH04EX7505",
+        "M004X7715"
+      ],
+      [
+        "MH04EX7505",
+        "M00EX770"
+      ],
+      [
+        "MH01DB1477",
+        "MH91A064"
+      ],
+      [
+        "MH01DB1477",
+        "MQ01A0Z7"
+      ]
+    ]
+  }
+]

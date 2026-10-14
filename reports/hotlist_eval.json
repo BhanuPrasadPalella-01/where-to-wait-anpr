@@ -1,0 +1,60 @@
+{
+  "hotlist_size": 100072,
+  "bk_build_s": 6.7,
+  "test_reads": 267,
+  "wanted_reads": 97,
+  "innocent_reads": 170,
+  "bk_mean_comparisons": 45613,
+  "linear_scan_comparisons": 100072,
+  "exact": {
+    "wanted_recall": 0.701,
+    "wrong_vehicle_alert_rate": 0.0
+  },
+  "fuzzy": {
+    "theta=0.0": {
+      "wanted_recall": 0.9072,
+      "wrong_vehicle_alerts_per_1000_reads": 670.4,
+      "innocent_cars_flagged": 1.0
+    },
+    "theta=0.02": {
+      "wanted_recall": 0.8969,
+      "wrong_vehicle_alerts_per_1000_reads": 161.0,
+      "innocent_cars_flagged": 0.2529
+    },
+    "theta=0.05": {
+      "wanted_recall": 0.8763,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.1": {
+      "wanted_recall": 0.8041,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.15": {
+      "wanted_recall": 0.7835,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.2": {
+      "wanted_recall": 0.7423,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.3": {
+      "wanted_recall": 0.7423,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.5": {
+      "wanted_recall": 0.7113,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.7": {
+      "wanted_recall": 0.6392,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    }
+  }
+}

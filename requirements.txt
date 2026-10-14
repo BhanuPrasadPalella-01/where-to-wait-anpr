@@ -1,0 +1,14 @@
+ultralytics>=8.4
+fast-plate-ocr[onnx]==1.1.0
+opencv-python
+pandas
+pyarrow
+numpy
+scipy
+matplotlib
+networkx
+osmnx>=2.0
+huggingface_hub
+eclipse-sumo
+traci
+sumolib
