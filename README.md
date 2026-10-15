@@ -8,6 +8,8 @@ Each sighting is checked for physical plausibility (catches misreads and cloned 
 particle belief over where the car can be on the road graph, and the units are re-assigned by a
 greedy coverage planner. An officer confirms every step; nothing here issues stop orders.
 
+![Interception rate vs camera coverage](reports/final_coverage.png)
+
 ## Headline results (all measured, see [`reports/RESULTS.md`](reports/RESULTS.md))
 
 | | Result |
@@ -57,8 +59,6 @@ Perception: `scripts/prepare_data.py` downloads the public datasets; `scripts/re
 runs detector + OCR end to end with the weights in `weights/final/`.
 
 ## Status
-
-This repository is being published in two parts: perception first, the interception planner next.
 
 * Done: perception (detector, Indian OCR, hotlist), road graph + own algorithms, gate, belief,
   planner, chase simulator with baselines, coverage / clone / fleet-size experiments.
