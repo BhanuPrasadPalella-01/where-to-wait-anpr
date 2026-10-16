@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where to Wait — Control Room</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #161c23; --line: #2a333d; --text: #e6edf3; --muted: #8b98a5;
+    --blue: #4c9aff; --red: #ff5c5c; --amber: #f5b942; --green: #3fb950; --violet: #b18cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif;
+         display: grid; grid-template-columns: 1fr 380px; height: 100vh; overflow: hidden; }
+  #map { height: 100vh; }
+  aside { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 16px; margin: 0 0 2px; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  section { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .stat { flex: 1 1 30%; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+  button { background: #222b35; color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px;
+           font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #08111d; font-weight: 600; }
+  button.approve { background: var(--green); border-color: var(--green); color: #07150a; font-weight: 700; flex: 1; }
+  button.reject { flex: 1; }
+  button:disabled { opacity: .4; cursor: default; }
+  #plan { display: none; background: #1d2a1f; border: 1px solid #2f5d36; border-radius: 9px; padding: 10px 12px; }
+  #plan.on { display: block; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { border-color: var(--green); } }
+  #plan ul { margin: 6px 0 10px; padding-left: 18px; }
+  #banner { display: none; margin: 0; padding: 10px 12px; border-radius: 8px; font-weight: 700; }
+  #banner.intercept { display: block; background: #12361b; color: #8ef0a4; border: 1px solid var(--green); }
+  #banner.escape { display: block; background: #3a1414; color: #ffb3b3; border: 1px solid var(--red); }
+  #log { flex: 1; overflow-y: auto; padding: 8px 16px 16px; min-height: 0; }
+  .ev { padding: 6px 0 6px 10px; border-left: 3px solid var(--line); margin: 4px 0; font-size: 12.5px; }
+  .ev time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .ev.sighting { border-color: var(--blue); } .ev.flag { border-color: var(--red); background: #2a1515; }
+  .ev.plan { border-color: var(--amber); } .ev.approve { border-color: var(--green); }
+  .ev.intercept { border-color: var(--green); background: #12361b; } .ev.escape { border-color: var(--red); }
+  .ev.camera { border-color: var(--violet); }
+  label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .legend { color: var(--muted); font-size: 11.5px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin-top: 8px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .leaflet-container { background: #0b0f13; }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5); }
+  .unit-icon { background: var(--blue); color: #fff; border: 2px solid #fff; border-radius: 6px; font: 700 11px system-ui;
+               display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 6px #0008; }
+  .unit-icon.waiting { background: var(--green); color: #07150a; }
+  .suspect-icon { background: var(--red); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 6px #ff5c5c44; }
+  #feeds { position: absolute; left: 10px; bottom: 26px; z-index: 900; display: flex; gap: 8px; flex-wrap: wrap;
+           max-width: calc(100vw - 420px); }
+  .feed { background: #000c; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; width: 300px; }
+  .feed img { display: block; width: 100%; background: #000; min-height: 120px; }
+  .feed div { padding: 4px 8px; font-size: 12px; display: flex; justify-content: space-between; }
+  .feed.off { border-color: var(--violet); } .feed.off img { opacity: .3; }
+  input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px;
+                     padding: 7px 9px; font: 600 14px ui-monospace, monospace; letter-spacing: 1px; width: 150px; }
+  #reads { max-height: 210px; overflow-y: auto; }
+  .rd { display: grid; grid-template-columns: 64px 1fr auto; gap: 8px; align-items: center; padding: 4px 0;
+        border-bottom: 1px solid var(--line); font-size: 12px; }
+  .rd img { width: 64px; height: 22px; object-fit: cover; border-radius: 3px; background: #000; }
+  .rd b { font: 600 13px ui-monospace, monospace; }
+  .rd .hit { color: var(--green); font-weight: 700; } .rd .miss { color: var(--muted); }
+  .cam-icon { background: #b18cff; color: #120a22; border: 2px solid #fff; border-radius: 6px; font: 700 10px system-ui;
+              display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 4px; }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 50vh 50vh; } #map { height: 50vh; }
+    #feeds { bottom: auto; top: 10px; left: auto; right: 10px; max-width: 48vw; flex-direction: column; }
+    .feed { width: 46vw; } aside { overflow-y: auto; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="feeds"></div>
+<aside>
+  <header>
+    <h1>Where to Wait — Control Room</h1>
+    <div class="sub">Live interception planning from ANPR sightings · officer confirms every move</div>
+  </header>
+  <section>
+    <div class="row">
+      <input type="text" id="liveplate" placeholder="WANTED PLATE" maxlength="12">
+      <button class="primary" id="live">● Open live case</button>
+    </div>
+    <div class="sub" id="livehint" style="margin-top:6px">Live mode: only real cameras (edge nodes) drive the map.</div>
+  </section>
+  <section>
+    <div class="row">
+      <button id="start">▶ Simulated chase</button>
+      <button id="pause">⏸ Pause</button>
+      <label>speed <input id="speed" type="range" min="1" max="20" value="5"> <span id="speedv">5×</span></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="clone" title="Same plate read at a far camera">⚠ Inject cloned plate</button>
+      <button id="offline" title="Knock out a camera in the predicted area">📷 Camera offline</button>
+      <label><input type="checkbox" id="truth" checked> show true suspect</label>
+    </div>
+  </section>
+  <section>
+    <div class="row">
+      <div class="stat"><span>Clock</span><b id="clock">0:00</b></div>
+      <div class="stat"><span>Plate</span><b id="plate">—</b></div>
+      <div class="stat"><span>Predicted catch</span><b id="prob">—</b></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="stat"><span>Sightings</span><b id="nsight">0</b></div>
+      <div class="stat"><span>Flagged</span><b id="nflag">0</b></div>
+      <div class="stat"><span>Live cameras</span><b id="ncam">—</b></div>
+    </div>
+    <div class="legend">
+      <div><span class="dot" style="background:#ff5c5c"></span>true suspect (demo)</div>
+      <div><span class="dot" style="background:#f5b942"></span>predicted position</div>
+      <div><span class="dot" style="background:#4c9aff"></span>accepted sighting</div>
+      <div><span class="dot" style="background:#ff5c5c;border-radius:2px"></span>flagged sighting</div>
+      <div><span class="dot" style="background:#5c6773"></span>camera (live)</div>
+      <div><span class="dot" style="background:#b18cff"></span>camera offline</div>
+    </div>
+  </section>
+  <section id="readsec" style="display:none">
+    <b style="font-size:13px">Camera reads — every plate checked against the hotlist</b>
+    <div id="reads"></div>
+  </section>
+  <section>
+    <p id="banner"></p>
+    <div id="plan">
+      <b>Proposed plan — officer approval needed</b>
+      <ul id="planlist"></ul>
+      <div class="row"><button class="approve" id="approve">✔ Approve</button><button class="reject" id="reject">✖ Reject</button></div>
+    </div>
+  </section>
+  <div id="log"></div>
+</aside>
+<script>
+const map = L.map('map', { zoomControl: true, preferCanvas: true });
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, className: 'dark-tiles', attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+const layers = {
+  cams: L.layerGroup().addTo(map), particles: L.layerGroup().addTo(map), sightings: L.layerGroup().addTo(map),
+  paths: L.layerGroup().addTo(map), plan: L.layerGroup().addTo(map), units: L.layerGroup().addTo(map),
+  truth: L.layerGroup().addTo(map), incident: L.layerGroup().addTo(map),
+};
+const ll = p => [p[1], p[0]];
+layers.edges = L.layerGroup().addTo(map);
+let feedKey = '';
+let fitted = false, camKey = '';
+const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                     body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+document.getElementById('live').onclick = () => {
+  const p = document.getElementById('liveplate').value.trim();
+  if (!p) { document.getElementById('liveplate').focus(); return; }
+  fitted = false; post('/api/case', { plate: p });
+};
+document.getElementById('start').onclick = () => { fitted = false; post('/api/demo/start'); };
+document.getElementById('pause').onclick = () => post('/api/demo/pause');
+document.getElementById('clone').onclick = () => post('/api/demo/clone');
+document.getElementById('offline').onclick = () => post('/api/camera/random_offline');
+document.getElementById('approve').onclick = () => post('/api/approve');
+document.getElementById('reject').onclick = () => post('/api/reject');
+document.getElementById('truth').onchange = e => post('/api/settings', { show_truth: e.target.checked });
+const sp = document.getElementById('speed');
+sp.oninput = () => { document.getElementById('speedv').textContent = sp.value + '×'; post('/api/settings', { speed: +sp.value }); };
+
+function render(s) {
+  document.getElementById('clock').textContent = fmt(s.t);
+  document.getElementById('plate').textContent = s.case ? s.case.plate : '—';
+  document.getElementById('prob').textContent = s.case ? Math.round(100 * s.plan_prob) + '%' : '—';
+  document.getElementById('nsight').textContent = s.sightings.filter(x => x.status === 'accepted').length;
+  document.getElementById('nflag').textContent = s.sightings.filter(x => x.status.startsWith('flagged')).length;
+  const live = s.cameras.filter(c => c.live).length;
+  document.getElementById('ncam').textContent = `${live}/${s.cameras.length}`;
+  document.getElementById('pause').textContent = s.running ? '⏸ Pause' : '▶ Resume';
+  if (document.activeElement !== sp && +sp.value !== s.speed) { sp.value = s.speed; document.getElementById('speedv').textContent = s.speed + '×'; }
+
+  // real edge cameras: map markers + live video tiles
+  layers.edges.clearLayers();
+  for (const e of s.edges || []) L.marker(ll(e.lonlat), { icon: L.divIcon({ className: 'cam-icon',
+      html: '📷 ' + e.name, iconSize: [70, 18] }), zIndexOffset: 900 })
+    .bindTooltip(`${e.name} at junction ${e.junction} · ${e.reads} reads, ${e.matches} matches${e.online ? '' : ' · OFFLINE'}`)
+    .addTo(layers.edges);
+  const fk = (s.edges || []).map(e => e.name + (e.online ? 1 : 0)).join('|');
+  if (fk !== feedKey) {
+    feedKey = fk;
+    document.getElementById('feeds').innerHTML = (s.edges || []).map(e =>
+      `<div class="feed ${e.online ? '' : 'off'}" id="feed-${e.name}"><img src="/api/edge/stream/${encodeURIComponent(e.name)}">
+       <div><span>📷 ${e.name} · junction ${e.junction}</span><span class="st">${e.online ? 'LIVE' : 'OFFLINE'}</span></div></div>`).join('');
+  }
+  const rs = document.getElementById('readsec');
+  rs.style.display = (s.reads && s.reads.length) || (s.edges && s.edges.length) ? 'block' : 'none';
+  document.getElementById('reads').innerHTML = (s.reads || []).slice().reverse().map(r =>
+    `<div class="rd"><img src="/api/thumb/read/${r.rid}" onerror="this.style.visibility='hidden'">
+     <div><b>${r.plate}</b> <span class="sub">conf ${(+r.conf).toFixed(2)} · ${r.camera}</span></div>
+     <span class="${r.hit ? 'hit' : 'miss'}">${r.hit ? 'MATCH ✔' : 'not wanted'}</span></div>`).join('')
+    || '<div class="sub">waiting for the cameras to read a plate…</div>';
+  if (s.case && s.case.live) document.getElementById('livehint').textContent =
+    `Live case ${s.case.plate} · ${(s.edges || []).filter(e => e.online).length} real camera(s) online · tabletop scale 1 s = ${s.speed} s`;
+
+  if (!fitted && (s.edges || []).length && s.case && s.case.live) {
+    map.fitBounds(L.latLngBounds(s.edges.map(e => ll(e.lonlat))).pad(0.6)); fitted = true;
+  }
+  if (!fitted && s.cameras.length) {
+    map.fitBounds(L.latLngBounds(s.cameras.map(c => ll(c.lonlat))).pad(0.02));
+    fitted = true;
+  }
+  // cameras: redraw only when liveness changes
+  const key = s.cameras.map(c => c.live ? 1 : 0).join('');
+  if (key !== camKey) {
+    camKey = key; layers.cams.clearLayers();
+    for (const c of s.cameras) L.circleMarker(ll(c.lonlat), { radius: c.live ? 2 : 5, weight: c.live ? 0 : 2,
+      color: '#b18cff', fillColor: c.live ? '#5c6773' : '#b18cff', fillOpacity: c.live ? .7 : .9 })
+      .bindTooltip(`camera ${c.node}${c.live ? '' : ' — OFFLINE'}`).addTo(layers.cams);
+  }
+  layers.particles.clearLayers();
+  for (const [x, y, w] of s.particles) L.circleMarker([y, x], { radius: 3 + 9 * w, stroke: false,
+    fillColor: '#f5b942', fillOpacity: 0.15 + 0.6 * w }).addTo(layers.particles);
+
+  layers.sightings.clearLayers();
+  for (const x of s.sightings) {
+    const flagged = x.status.startsWith('flagged');
+    L.circleMarker(ll(x.lonlat), { radius: flagged ? 9 : 7, color: '#fff', weight: 2,
+      fillColor: flagged ? '#ff5c5c' : '#4c9aff', fillOpacity: .95 })
+      .bindTooltip(`${x.thumb ? `<img src="/api/thumb/sighting/${x.id}" style="width:160px;display:block;margin-bottom:4px">` : ''}#${x.id} ${x.plate} · ${x.source} · junction ${x.camera} · ${fmt(x.t)}<br>${x.status}${x.why ? '<br>' + x.why : ''}`)
+      .addTo(layers.sightings);
+  }
+  layers.incident.clearLayers();
+  if (s.case && s.case.lonlat) L.marker(ll(s.case.lonlat), { icon: L.divIcon({ html: '✖', className: '', iconSize: [16, 16] }) })
+    .bindTooltip('crime scene').addTo(layers.incident);
+
+  layers.units.clearLayers(); layers.paths.clearLayers();
+  for (const u of s.units) {
+    if (u.path.length > 1) L.polyline(u.path.map(ll), { color: '#4c9aff', weight: 3, opacity: .8 }).addTo(layers.paths);
+    if (u.target_lonlat && u.state === 'waiting')
+      L.circleMarker(ll(u.target_lonlat), { radius: 14, color: '#3fb950', weight: 2, fill: false }).addTo(layers.paths);
+    L.marker(ll(u.lonlat), { icon: L.divIcon({ className: 'unit-icon ' + u.state, html: u.id.replace('Unit ', 'U'),
+      iconSize: [26, 20] }) }).bindTooltip(`${u.id}: ${u.state}${u.target != null ? ' → junction ' + u.target : ''}`)
+      .addTo(layers.units);
+  }
+  layers.plan.clearLayers();
+  const pl = document.getElementById('plan'), list = document.getElementById('planlist');
+  if (s.pending_plan.length) {
+    pl.classList.add('on');
+    list.innerHTML = s.pending_plan.map(p => `<li>${p.unit} → junction ${p.node}</li>`).join('');
+    for (const p of s.pending_plan) L.polyline([ll(p.from), ll(p.to)], { color: '#3fb950', weight: 2, dashArray: '6 6' })
+      .addTo(layers.plan);
+  } else pl.classList.remove('on');
+
+  layers.truth.clearLayers();
+  if (s.truth && s.truth.lonlat) L.marker(ll(s.truth.lonlat), { icon: L.divIcon({ className: 'suspect-icon', iconSize: [14, 14] }),
+    zIndexOffset: 1000 }).bindTooltip(`true suspect (driver model: ${s.truth.model}) — hidden from the planner`).addTo(layers.truth);
+
+  const b = document.getElementById('banner');
+  if (s.outcome) { b.className = s.outcome.kind; b.textContent = s.outcome.kind === 'intercept'
+      ? `✔ Intercepted by ${s.outcome.unit} at ${fmt(s.outcome.t)}` : `✖ Suspect escaped at ${fmt(s.outcome.t)}`; }
+  else { b.className = ''; }
+
+  const log = document.getElementById('log');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.innerHTML = s.events.map(e => `<div class="ev ${e.kind}"><time>${fmt(e.t)}</time>${e.text}</div>`).join('');
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+  ws.onmessage = m => render(JSON.parse(m.data));
+  ws.onopen = () => setInterval(() => ws.readyState === 1 && ws.send('ping'), 15000);
+  ws.onclose = () => setTimeout(connect, 1000);
+}
+connect();
+</script>
+</body>
+</html>

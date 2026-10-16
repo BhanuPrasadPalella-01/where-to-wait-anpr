@@ -36,6 +36,8 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            simulate.py    chase simulator, baselines B0/B1/B2, ablations, parallel sweeps
            sumo_graph.py  planner graph from a SUMO network
            sumo_sim.py    SUMO/TraCI replication (work in progress, see below)
+server/    control_room.py (case state, gate, belief, plan, officer approval), app.py (FastAPI + WebSocket),
+           static/index.html (Leaflet dashboard)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
            hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact)
@@ -55,6 +57,12 @@ python3 -m venv .venv
 .venv/bin/python scripts/plot_results.py demo
 ```
 
+Control-room dashboard (live demo): `.venv/bin/python -m uvicorn server.app:app --port 8000`, open
+http://localhost:8000, press **Start demo chase**. Sightings appear, the predicted area spreads, the
+officer approves each plan, units drive to their junctions; **Inject cloned plate** shows the
+feasibility gate flagging an impossible journey, **Camera offline** marks a camera blind. Real edge
+cameras post to `POST /api/sighting` (`{"camera": <junction>, "plate": "...", "score": 0.93}`).
+
 Perception: `scripts/prepare_data.py` downloads the public datasets; `scripts/read_plates.py <images>`
 runs detector + OCR end to end with the weights in `weights/final/`.
 
@@ -62,6 +70,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 
 * Done: perception (detector, Indian OCR, hotlist), road graph + own algorithms, gate, belief,
   planner, chase simulator with baselines, coverage / clone / fleet-size experiments.
+* Done: control-room dashboard (FastAPI + WebSocket + Leaflet) with officer approval, clone flagging,
+  camera-offline handling and a demo chase.
 * In progress: SUMO replication (`planner/sumo_sim.py` — known bug: TraCI stop position on very short
   edges), MQTT messaging with loss/replay, multiple suspects, dashboard, tabletop demo.
 
