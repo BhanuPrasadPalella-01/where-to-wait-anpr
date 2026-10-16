@@ -12,3 +12,5 @@ huggingface_hub
 eclipse-sumo
 traci
 sumolib
+fastapi
+uvicorn[standard]
