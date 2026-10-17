@@ -21,3 +21,6 @@ reports/demo/
 reports/pipeline_demo_grid.jpg
 reports/label_check*.jpg
 reports/*.log
+
+# local Claude Code settings
+.claude/
