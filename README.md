@@ -38,9 +38,11 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            sumo_sim.py    SUMO/TraCI replication (work in progress, see below)
 server/    control_room.py (case state, gate, belief, plan, officer approval), app.py (FastAPI + WebSocket),
            static/index.html (Leaflet dashboard)
+edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
            hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py
-tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact)
+tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact),
+           test_camera_node.py (OCR vote, read backlog)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
 reports/   RESULTS.md, fact_check.md, result tables and raw episode logs (.jsonl)
 ```
@@ -63,6 +65,23 @@ officer approves each plan, units drive to their junctions; **Inject cloned plat
 feasibility gate flagging an impossible journey, **Camera offline** marks a camera blind. Real edge
 cameras post to `POST /api/sighting` (`{"camera": <junction>, "plate": "...", "score": 0.93}`).
 
+## Live demo
+
+Real cameras reading real plates, no simulated chase: start the control room, then one edge node per
+camera (Mac webcam, iPhone via Continuity Camera, an Android phone running "IP Webcam", or a video file):
+
+```bash
+.venv/bin/python -m uvicorn server.app:app --host 0.0.0.0 --port 8000
+.venv/bin/python -m edge.camera_node --name cam-A --source 0
+.venv/bin/python -m edge.camera_node --name cam-FAR --role far --source http://PHONE_IP:8080/video
+```
+
+Each node tracks plates with ByteTrack, reads the three sharpest crops of every track, votes over the
+OCR strings and fuzzy-matches the hotlist served by the control room. Every read appears in the
+dashboard's read log; only hotlist matches become sightings on the map. A `--role far` camera shows the
+cloned-plate check, and a camera whose stream stops for 5 s is marked blind. Reads made while the
+control room is down are queued on the node and replayed. Full script and tips: [`DEMO.md`](DEMO.md).
+
 Perception: `scripts/prepare_data.py` downloads the public datasets; `scripts/read_plates.py <images>`
 runs detector + OCR end to end with the weights in `weights/final/`.
 
@@ -72,8 +91,9 @@ runs detector + OCR end to end with the weights in `weights/final/`.
   planner, chase simulator with baselines, coverage / clone / fleet-size experiments.
 * Done: control-room dashboard (FastAPI + WebSocket + Leaflet) with officer approval, clone flagging,
   camera-offline handling and a demo chase.
-* In progress: SUMO replication (`planner/sumo_sim.py` — known bug: TraCI stop position on very short
-  edges), MQTT messaging with loss/replay, multiple suspects, dashboard, tabletop demo.
+* Done: live mode with real edge cameras (`edge/camera_node.py`, [`DEMO.md`](DEMO.md)).
+* Next: see [`ROADMAP.md`](ROADMAP.md) — control-room tests, CI, SUMO replication fix (TraCI stop
+  position on very short edges), signed messaging with replay, multiple suspects.
 
 ## Data and ethics
 
