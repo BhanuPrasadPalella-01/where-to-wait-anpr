@@ -38,7 +38,7 @@
   #banner { display: none; margin: 0; padding: 10px 12px; border-radius: 8px; font-weight: 700; }
   #banner.intercept { display: block; background: #12361b; color: #8ef0a4; border: 1px solid var(--green); }
   #banner.escape { display: block; background: #3a1414; color: #ffb3b3; border: 1px solid var(--red); }
-  #log { flex: 1; overflow-y: auto; padding: 8px 16px 16px; min-height: 0; }
+  #log { padding: 8px 16px 16px; }
   .ev { padding: 6px 0 6px 10px; border-left: 3px solid var(--line); margin: 4px 0; font-size: 12.5px; }
   .ev time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
   .ev.sighting { border-color: var(--blue); } .ev.flag { border-color: var(--red); background: #2a1515; }
@@ -70,6 +70,32 @@
   .rd .hit { color: var(--green); font-weight: 700; } .rd .miss { color: var(--muted); }
   .cam-icon { background: #b18cff; color: #120a22; border: 2px solid #fff; border-radius: 6px; font: 700 10px system-ui;
               display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 4px; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted);
+                 padding: 9px 9px; font-size: 13px; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--blue); }
+  .tabs .badge { background: var(--red); color: #fff; border-radius: 99px; padding: 0 6px; font-size: 10px; margin-left: 3px; }
+  .panes { flex: 1; min-height: 0; overflow-y: auto; }
+  .pane { display: none; } .pane.on { display: block; }
+  .pane > section:last-child { border-bottom: 0; }
+  form.reg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  form.reg input, form.reg select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+                                    padding: 6px 8px; font: inherit; width: 100%; min-width: 0; }
+  form.reg input.plate { font: 600 14px ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase; }
+  form.reg .full { grid-column: 1 / -1; }
+  .err { color: var(--red); font-size: 12px; min-height: 16px; }
+  .veh { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: var(--bg); }
+  .veh b { font: 700 14px ui-monospace, monospace; letter-spacing: 1px; }
+  .veh .sev { float: right; font-size: 11px; color: var(--amber); }
+  .veh .row { margin-top: 6px; } .veh button { padding: 4px 9px; font-size: 12px; }
+  .hist { font-size: 12.5px; border-left: 3px solid var(--blue); padding: 4px 0 4px 10px; margin: 6px 0; }
+  .hist.route { border-color: #ff8a3d; color: var(--muted); }
+  .us { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .us a { color: var(--blue); font-size: 12px; } .ok { color: var(--green); } .late { color: var(--red); font-weight: 700; }
+  .al { font-size: 12.5px; border-left: 3px solid var(--line); padding: 5px 0 5px 10px; margin: 5px 0; }
+  .al.assign { border-color: var(--amber); } .al.sighting { border-color: var(--blue); }
+  .al.intercept { border-color: var(--green); } .al.escape { border-color: var(--red); }
+  .al small { display: block; color: var(--muted); }
   @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 50vh 50vh; } #map { height: 50vh; }
     #feeds { bottom: auto; top: 10px; left: auto; right: 10px; max-width: 48vw; flex-direction: column; }
     .feed { width: 46vw; } aside { overflow-y: auto; } }
@@ -102,12 +128,26 @@
       <label><input type="checkbox" id="truth" checked> show true suspect</label>
     </div>
   </section>
+  <nav class="tabs">
+    <button data-tab="case" class="on">Case</button><button data-tab="registry">Registry</button>
+    <button data-tab="cams">Cameras</button><button data-tab="alerts">Alerts <span class="badge" id="nlate" hidden></span></button>
+    <button data-tab="log">Log</button>
+  </nav>
+  <div class="panes">
+  <div class="pane on" id="pane-case">
   <section>
+    <p id="banner"></p>
+    <div id="plan">
+      <b>Proposed plan — officer approval needed</b>
+      <ul id="planlist"></ul>
+      <div class="row"><button class="approve" id="approve">✔ Approve</button><button class="reject" id="reject">✖ Reject</button></div>
+    </div>
     <div class="row">
       <div class="stat"><span>Clock</span><b id="clock">0:00</b></div>
       <div class="stat"><span>Plate</span><b id="plate">—</b></div>
       <div class="stat"><span>Predicted catch</span><b id="prob">—</b></div>
     </div>
+    <div class="sub" id="vehdesc" style="margin-top:6px"></div>
     <div class="row" style="margin-top:8px">
       <div class="stat"><span>Sightings</span><b id="nsight">0</b></div>
       <div class="stat"><span>Flagged</span><b id="nflag">0</b></div>
@@ -118,23 +158,57 @@
       <div><span class="dot" style="background:#f5b942"></span>predicted position</div>
       <div><span class="dot" style="background:#4c9aff"></span>accepted sighting</div>
       <div><span class="dot" style="background:#ff5c5c;border-radius:2px"></span>flagged sighting</div>
-      <div><span class="dot" style="background:#5c6773"></span>camera (live)</div>
+      <div><span class="dot" style="background:#ff8a3d;border-radius:2px"></span>reconstructed route</div>
       <div><span class="dot" style="background:#b18cff"></span>camera offline</div>
     </div>
   </section>
-  <section id="readsec" style="display:none">
+  <section>
+    <b style="font-size:13px">Route history — reconstructed from camera sightings</b>
+    <div id="history" class="sub">No sightings yet.</div>
+  </section>
+  </div>
+  <div class="pane" id="pane-registry">
+  <section>
+    <b style="font-size:13px">Register a wanted vehicle</b>
+    <form class="reg" id="regform" autocomplete="off" style="margin-top:8px">
+      <input class="plate" name="plate" placeholder="Plate *" required maxlength="12">
+      <input name="case_no" placeholder="Case / FIR number *" required>
+      <input class="full" name="offence" placeholder="Offence / reason *" required>
+      <input name="colour" placeholder="Colour">
+      <select name="vehicle_type"><option value="">Vehicle type</option><option>car</option><option>motorcycle</option>
+        <option>auto-rickshaw</option><option>bus</option><option>truck</option><option>van</option></select>
+      <input name="make_model" placeholder="Make / model">
+      <select name="severity"><option value="5">Severity 5 — violent</option><option value="4">Severity 4</option>
+        <option value="3" selected>Severity 3</option><option value="2">Severity 2</option><option value="1">Severity 1 — minor</option></select>
+      <input class="full" name="officer" placeholder="Registering officer *" required>
+      <button class="primary full" type="submit">＋ Add to hotlist</button>
+      <div class="err full" id="regerr"></div>
+    </form>
+    <div class="sub">Every entry needs a case number and reason, is written to the audit log, and expires after 28 days.</div>
+  </section>
+  <section>
+    <b style="font-size:13px">Hotlist — every camera checks these plates</b>
+    <div id="registry" class="sub">No registered vehicles.</div>
+  </section>
+  </div>
+  <div class="pane" id="pane-cams">
+  <section id="readsec">
     <b style="font-size:13px">Camera reads — every plate checked against the hotlist</b>
     <div id="reads"></div>
   </section>
+  </div>
+  <div class="pane" id="pane-alerts">
   <section>
-    <p id="banner"></p>
-    <div id="plan">
-      <b>Proposed plan — officer approval needed</b>
-      <ul id="planlist"></ul>
-      <div class="row"><button class="approve" id="approve">✔ Approve</button><button class="reject" id="reject">✖ Reject</button></div>
-    </div>
+    <b style="font-size:13px">Patrol units</b>
+    <div id="unitstat"></div>
   </section>
-  <div id="log"></div>
+  <section>
+    <b style="font-size:13px">Alerts sent</b>
+    <div id="alerts" class="sub">None yet.</div>
+  </section>
+  </div>
+  <div class="pane" id="pane-log"><div id="log"></div></div>
+  </div>
 </aside>
 <script>
 const map = L.map('map', { zoomControl: true, preferCanvas: true });
@@ -148,6 +222,40 @@ const layers = {
 };
 const ll = p => [p[1], p[0]];
 layers.edges = L.layerGroup().addTo(map);
+layers.track = L.layerGroup().addTo(map);
+layers.history = L.layerGroup().addTo(map);
+let regKey = '', alertKey = '', histKey = '';
+
+// tabs
+for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + b.dataset.tab));
+};
+
+// registration
+document.getElementById('regform').onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  f.severity = +f.severity;
+  const r = await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) });
+  const d = await r.json();
+  document.getElementById('regerr').textContent = r.ok ? '' : (d.error || 'could not register');
+  if (r.ok) { e.target.reset(); regKey = ''; }
+};
+window.trackVehicle = id => { fitted = false; layers.history.clearLayers(); post(`/api/vehicles/${id}/track`); };
+window.closeVehicle = id => { if (confirm('Remove this vehicle from the hotlist?')) post(`/api/vehicles/${id}/close`).then(() => regKey = ''); };
+window.showHistory = async id => {
+  const d = await (await fetch(`/api/vehicles/${id}/history`)).json();
+  layers.history.clearLayers();
+  for (const r of d.routes.filter(r => r.rank === 1))
+    L.polyline(r.lonlat.map(ll), { color: '#d58cff', weight: 4, opacity: .85 }).bindTooltip(`stored route · ${Math.round(r.travel_s)} s`).addTo(layers.history);
+  const pts = d.sightings.filter(x => x.status === 'accepted');
+  for (const x of pts) L.circleMarker([x.lat, x.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#d58cff', fillOpacity: 1 })
+    .bindTooltip(`${x.has_thumb ? `<img src="/api/history_thumb/${x.id}" style="width:150px;display:block">` : ''}${x.plate} · junction ${x.junction} · ${x.source}<br>${new Date(x.wall_time * 1000).toLocaleString()}`)
+    .addTo(layers.history);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts.map(x => [x.lat, x.lon])).pad(0.4));
+  else alert(`No stored sightings for ${d.vehicle.plate} yet.`);
+};
 let feedKey = '';
 let fitted = false, camKey = '';
 const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -172,6 +280,9 @@ sp.oninput = () => { document.getElementById('speedv').textContent = sp.value + 
 function render(s) {
   document.getElementById('clock').textContent = fmt(s.t);
   document.getElementById('plate').textContent = s.case ? s.case.plate : '—';
+  const v = s.case && s.case.vehicle;
+  document.getElementById('vehdesc').textContent = v ? `${[v.colour, v.make_model || v.vehicle_type].filter(Boolean).join(' ')} · case ${v.case_no} · ${v.offence} · severity ${v.severity}/5`
+    : (s.case ? 'Not on the registry (typed plate or demo).' : '');
   document.getElementById('prob').textContent = s.case ? Math.round(100 * s.plan_prob) + '%' : '—';
   document.getElementById('nsight').textContent = s.sightings.filter(x => x.status === 'accepted').length;
   document.getElementById('nflag').textContent = s.sightings.filter(x => x.status.startsWith('flagged')).length;
@@ -193,12 +304,10 @@ function render(s) {
       `<div class="feed ${e.online ? '' : 'off'}" id="feed-${e.name}"><img src="/api/edge/stream/${encodeURIComponent(e.name)}">
        <div><span>📷 ${e.name} · junction ${e.junction}</span><span class="st">${e.online ? 'LIVE' : 'OFFLINE'}</span></div></div>`).join('');
   }
-  const rs = document.getElementById('readsec');
-  rs.style.display = (s.reads && s.reads.length) || (s.edges && s.edges.length) ? 'block' : 'none';
   document.getElementById('reads').innerHTML = (s.reads || []).slice().reverse().map(r =>
     `<div class="rd"><img src="/api/thumb/read/${r.rid}" onerror="this.style.visibility='hidden'">
      <div><b>${r.plate}</b> <span class="sub">conf ${(+r.conf).toFixed(2)} · ${r.camera}</span></div>
-     <span class="${r.hit ? 'hit' : 'miss'}">${r.hit ? 'MATCH ✔' : 'not wanted'}</span></div>`).join('')
+     <span class="${r.hit || r.hotlist ? 'hit' : 'miss'}">${r.hit ? 'MATCH ✔' : r.hotlist ? 'on hotlist ⚑' : 'not wanted'}</span></div>`).join('')
     || '<div class="sub">waiting for the cameras to read a plate…</div>';
   if (s.case && s.case.live) document.getElementById('livehint').textContent =
     `Live case ${s.case.plate} · ${(s.edges || []).filter(e => e.online).length} real camera(s) online · tabletop scale 1 s = ${s.speed} s`;
@@ -256,15 +365,60 @@ function render(s) {
   if (s.truth && s.truth.lonlat) L.marker(ll(s.truth.lonlat), { icon: L.divIcon({ className: 'suspect-icon', iconSize: [14, 14] }),
     zIndexOffset: 1000 }).bindTooltip(`true suspect (driver model: ${s.truth.model}) — hidden from the planner`).addTo(layers.truth);
 
+  // reconstructed route between sightings: best path solid, alternatives dashed
+  layers.track.clearLayers();
+  for (const seg of s.track || []) seg.paths.forEach((p, i) => L.polyline(p.lonlat.map(ll), i === 0
+      ? { color: '#ff8a3d', weight: 5, opacity: .9 } : { color: '#ff8a3d', weight: 2, opacity: .5, dashArray: '4 6' })
+    .bindTooltip(`route ${seg.from} → ${seg.to} · option ${p.rank} · ${Math.round(100 * p.share)}% · ${Math.round(p.travel_s)} s free-flow vs ${Math.round(seg.t1 - seg.t0)} s observed`)
+    .addTo(layers.track));
+  const acc = s.sightings.filter(x => x.status === 'accepted');
+  const hk = acc.map(x => x.id).join(',') + '|' + (s.track || []).length;
+  if (hk !== histKey) {
+    histKey = hk;
+    const segs = Object.fromEntries((s.track || []).map(t => [t.to + '@' + Math.round(t.t1), t]));
+    document.getElementById('history').innerHTML = acc.map(x => {
+      const t = segs[x.camera + '@' + Math.round(x.t)];
+      const route = t ? (t.paths.length ? `<div class="hist route">↳ via ${t.paths.length} feasible road path(s); best ${Math.round(t.paths[0].travel_s)} s free-flow for ${Math.round(t.t1 - t.t0)} s observed (${Math.round(100 * t.paths[0].share)}%)</div>`
+                                        : `<div class="hist route">↳ no road path fits the observed time</div>`) : '';
+      return route + `<div class="hist"><b>${fmt(x.t)}</b> · junction ${x.camera} · ${x.source} · score ${x.score}</div>`;
+    }).join('') || 'No sightings yet.';
+  }
+
+  // hotlist registry
+  const rk = (s.registry || []).map(v => v.id + v.status).join(',') + '|' + (s.case ? s.case.plate : '');
+  if (rk !== regKey) {
+    regKey = rk;
+    document.getElementById('registry').innerHTML = (s.registry || []).map(v => `<div class="veh">
+      <span class="sev">severity ${v.severity}/5</span><b>${v.plate}</b>${s.case && s.case.plate === v.plate ? ' <span class="ok">● tracking</span>' : ''}
+      <div class="sub">${[v.colour, v.make_model || v.vehicle_type].filter(Boolean).join(' ')} · case ${v.case_no} · ${v.offence}</div>
+      <div class="sub">by ${v.officer} · expires ${new Date(v.expires_at * 1000).toLocaleDateString()}</div>
+      <div class="row"><button onclick="trackVehicle(${v.id})">● Track live</button>
+        <button onclick="showHistory(${v.id})">History</button><button onclick="closeVehicle(${v.id})">Remove</button></div></div>`).join('')
+      || 'No registered vehicles.';
+  }
+
+  // patrol units and alerts
+  const late = s.units.filter(u => u.alert && u.alert.late).length;
+  const nl = document.getElementById('nlate'); nl.hidden = !late; nl.textContent = late;
+  document.getElementById('unitstat').innerHTML = s.units.map(u => `<div class="us"><span><b>${u.id}</b> · ${u.state}${u.target != null ? ' → junction ' + u.target : ''}</span>
+    <a href="/unit/${encodeURIComponent(u.id)}" target="_blank">phone view ↗</a>
+    <span class="sub">${u.alert ? (u.alert.acked ? '<span class="ok">assignment acknowledged ✔</span>' : u.alert.late ? '<span class="late">no acknowledgement — check radio</span>' : 'assignment sent, awaiting acknowledgement') : 'no assignment'}</span></div>`).join('');
+  const ak = (s.alerts || []).map(a => a.id + (a.acked_at ? 'a' : '')).join(',');
+  if (ak !== alertKey) {
+    alertKey = ak;
+    document.getElementById('alerts').innerHTML = (s.alerts || []).map(a => `<div class="al ${a.kind}">${a.message}
+      <small>to ${a.recipient} · ${new Date(a.created_at * 1000).toLocaleTimeString()}${a.acked_at ? ' · acknowledged' : ''}</small></div>`).join('') || 'None yet.';
+  }
+
   const b = document.getElementById('banner');
   if (s.outcome) { b.className = s.outcome.kind; b.textContent = s.outcome.kind === 'intercept'
       ? `✔ Intercepted by ${s.outcome.unit} at ${fmt(s.outcome.t)}` : `✖ Suspect escaped at ${fmt(s.outcome.t)}`; }
   else { b.className = ''; }
 
-  const log = document.getElementById('log');
-  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  const log = document.getElementById('log'), box = log.parentElement.parentElement;
+  const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
   log.innerHTML = s.events.map(e => `<div class="ev ${e.kind}"><time>${fmt(e.t)}</time>${e.text}</div>`).join('');
-  if (atBottom) log.scrollTop = log.scrollHeight;
+  if (atBottom && log.parentElement.classList.contains('on')) box.scrollTop = box.scrollHeight;
 }
 
 function connect() {
