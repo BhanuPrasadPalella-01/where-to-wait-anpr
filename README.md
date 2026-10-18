@@ -35,18 +35,59 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            plan.py        greedy submodular interception planner + brute-force check
            simulate.py    chase simulator, baselines B0/B1/B2, ablations, parallel sweeps
            sumo_graph.py  planner graph from a SUMO network
+           reconstruct.py route reconstruction between sightings (Yen's K paths, space-time feasibility)
+           sumo_graph.py  planner graph from a SUMO network
            sumo_sim.py    SUMO/TraCI replication (work in progress, see below)
-server/    control_room.py (case state, gate, belief, plan, officer approval), app.py (FastAPI + WebSocket),
-           static/index.html (Leaflet dashboard)
+server/    control_room.py (case state, gate, belief, plan, officer approval, alerts), db.py (SQLite store),
+           app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
            hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact),
            test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
-           camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed)
+           camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed),
+           test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
 reports/   RESULTS.md, fact_check.md, result tables and raw episode logs (.jsonl)
 ```
+
+## System overview
+
+How each part of the original design maps to the code:
+
+| Original design | Implementation |
+|---|---|
+| Traffic cameras | `edge/camera_node.py` — any webcam, phone (IP Webcam / Continuity Camera) or video file |
+| YOLO + ANPR (vehicle/plate detection) | YOLO26n plate detector + ByteTrack + fine-tuned Indian OCR, one read per vehicle pass |
+| Detection processing server | `server/app.py` (FastAPI): camera registration, reads, video streams, WebSocket to the dashboard |
+| Database | `server/db.py` (SQLite, `data/control_room.db`): registry, sightings, plate reads, reconstructed routes, alerts, audit log |
+| Graph tracking engine | `planner/` — road graph from OpenStreetMap, feasibility gate, route reconstruction, particle belief |
+| Police web dashboard | `server/static/index.html` — live map, camera feeds, plate-read log, route history, plan approval |
+| Criminal (vehicle) registration | Registry tab: plate, case/FIR number, offence, colour, type, make, severity, officer; 28-day expiry |
+| Route prediction | particle belief over three fugitive models → predicted positions; greedy plan of where units wait |
+| Live vehicle tracking | sightings from real camera reads; route between sightings rebuilt with Yen's K shortest paths |
+| Police alerts & notifications | station alert per sighting; unit assignment alerts on approval; patrol phone page `/unit/<name>` with Acknowledge |
+
+### Database
+
+SQLite file `data/control_room.db` (created on first start, not committed). Registered vehicles need a case
+number, offence and officer, and expire after 28 days. Only hotlist hits are kept long term; plate reads
+that matched nothing are deleted after a day. Every registration, decision, approval and acknowledgement
+is written to the audit log (`GET /api/audit`).
+
+### Route reconstruction
+
+Between two accepted sightings the planner takes Yen's three shortest road paths between the cameras and
+keeps those the car could have driven in the observed time (`(1 − σ)·T ≤ Δt`), ranked by how well their
+travel time matches the gap. The best path is drawn solid on the map, alternatives dashed; segments are
+stored per vehicle and can be replayed later from the Registry tab (**History**).
+
+### Police alerts
+
+Approving a plan sends each moved unit an assignment alert; each accepted sighting alerts all stations;
+interception or escape is broadcast to all units. Patrol units open `http://<server>:8000/unit/Unit%201`
+on a phone: assignment, ETA, wanted-vehicle details with the plate photo, map, and **Acknowledge**.
+An assignment not acknowledged within 30 s is flagged on the dashboard.
 
 ## Quick start
 

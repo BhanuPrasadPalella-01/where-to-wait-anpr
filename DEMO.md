@@ -27,7 +27,9 @@ Open http://localhost:8000 (others on the same Wi-Fi: http://<your-ip>:8000, `ip
 ~10 min away. macOS asks once for camera permission for the terminal.
 
 ## 3. Script (5 minutes)
-1. Let the viewer pick a plate. Type it in **WANTED PLATE**, press **Open live case**.
+1. Let the viewer pick a plate. Register it in the **Registry** tab (plate, case/FIR number, offence, officer)
+   and press **Track live** — or type it in **WANTED PLATE** and press **Open live case**. A registered plate
+   read by any camera while nothing is being tracked starts tracking automatically.
 2. Pass a few *other* toy cars past cam-A: they appear in **Camera reads** as "not wanted" — continuous checking.
 3. Pass the wanted car past cam-A: green **HOTLIST MATCH** on the video, **MATCH ✔** in the list, sighting on
    the map with the plate crop, predicted area spreads, a plan appears. Click **Approve**.
@@ -35,6 +37,10 @@ Open http://localhost:8000 (others on the same Wi-Fi: http://<your-ip>:8000, `ip
 5. Clone: a second toy car with the **same plate** in front of cam-FAR a few seconds later → red flagged
    sighting: "impossible journey — possible clone or misread. Not used." Units are not diverted.
 6. Unplug / cover a phone's stream: after 5 s that camera turns OFFLINE (blind) on the map.
+7. Open `http://<your-ip>:8000/unit/Unit%201` on a phone: the patrol unit sees its assignment and the
+   wanted car, and presses **Acknowledge**; the **Alerts** tab shows who has acknowledged.
+8. After the case, **Registry → History** redraws the stored sightings and reconstructed route from the
+   database.
 
 Tabletop time scale: 1 real second = 10 city seconds (shown on screen), because toy cars cross the table
 far faster than a real car crosses real junctions.
