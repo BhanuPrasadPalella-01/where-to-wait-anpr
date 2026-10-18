@@ -11,14 +11,16 @@ from pathlib import Path
 import time
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from .control_room import ControlRoom
+from .db import Database
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="Where to Wait — control room")
-room = ControlRoom()
+db = Database()  # data/control_room.db: registry, sightings, reads, routes, alerts, audit log
+room = ControlRoom(db=db)
 state = {"speed": 5.0, "running": False, "show_truth": True}
 clients: set[WebSocket] = set()
 
@@ -32,6 +34,18 @@ class SightingIn(BaseModel):
 
 class CaseIn(BaseModel):
     plate: str
+
+
+class VehicleIn(BaseModel):
+    plate: str
+    case_no: str
+    offence: str
+    officer: str
+    colour: str = ""
+    vehicle_type: str = ""
+    make_model: str = ""
+    severity: int = 3
+    notes: str = ""
 
 
 class EdgeRegister(BaseModel):
@@ -85,7 +99,85 @@ def open_live_case(c: CaseIn):
 
 @app.get("/api/hotlist")
 def hotlist():
-    return {"plates": [room.case["plate"]] if room.case else []}
+    """Plates every edge camera checks against: all active registered vehicles (+ the open case)."""
+    return {"plates": room.hotlist()}
+
+
+# ---------------------------------------------------------------- criminal / vehicle registration
+@app.get("/api/vehicles")
+def vehicles(all: bool = False):
+    return db.vehicles(include_inactive=all)
+
+
+@app.post("/api/vehicles")
+def register_vehicle(v: VehicleIn):
+    try:
+        return room.register_vehicle(**(v.dict() if not hasattr(v, "model_dump") else v.model_dump()))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/vehicles/{vid}/track")
+def track_vehicle(vid: int):
+    """Open a live case for a registered vehicle: the cameras' reads now drive the map for it."""
+    v = db.vehicle(vid)
+    if not v or v["status"] != "active":
+        return JSONResponse({"error": "no such active vehicle"}, status_code=404)
+    room.reset(room.seed)
+    room.open_case(v["plate"], vehicle=v)
+    state["running"] = True
+    state["speed"] = 10.0
+    return {"ok": True, "plate": v["plate"]}
+
+
+@app.post("/api/vehicles/{vid}/close")
+def close_vehicle(vid: int):
+    room.close_vehicle(vid)
+    return {"ok": True}
+
+
+@app.get("/api/vehicles/{vid}/history")
+def vehicle_history(vid: int):
+    """Stored travel history: every sighting and every reconstructed route segment for this vehicle."""
+    return {"vehicle": db.vehicle(vid), "sightings": db.sightings(vid), "routes": db.routes(vid)}
+
+
+@app.get("/api/history_thumb/{sid}")
+def history_thumb(sid: int):
+    import base64
+    t = db.sighting_thumb(sid)
+    return Response(base64.b64decode(t), media_type="image/jpeg") if t else Response(status_code=404)
+
+
+# ---------------------------------------------------------------- police alerts
+@app.get("/api/alerts")
+def alerts(recipient: str | None = None):
+    return db.alerts(recipient)
+
+
+@app.post("/api/alerts/{aid}/ack")
+def ack_alert(aid: int):
+    return room.ack_alert(aid) or JSONResponse({"error": "no such alert"}, status_code=404)
+
+
+@app.get("/api/units/{name}")
+def unit(name: str):
+    if name not in room.units:
+        return JSONResponse({"error": "no such unit"}, status_code=404)
+    last = next((x for x in reversed(room.sightings) if x["status"] == "accepted"), None)
+    return {"unit": room.unit_view(name), "alerts": db.alerts(name, limit=20), "case": room.case,
+            "last_sighting": last and {k: v for k, v in last.items() if k != "thumb"} | {"thumb": bool(last.get("thumb"))},
+            "track": room.track[-10:], "t": room.t}
+
+
+@app.get("/unit/{name}")
+def unit_page(name: str):
+    return FileResponse(STATIC / "unit.html")
+
+
+@app.get("/api/audit")
+def audit(limit: int = 100):
+    return db.audit_log(limit)
 
 
 @app.post("/api/edge/register")
@@ -206,6 +298,7 @@ async def clock():
         while True:
             await asyncio.sleep(tick)
             room.check_edges(time.time())
+            room.check_acks(time.time())
             if state["running"] and room.case:
                 room.step(tick * state["speed"])
             if clients:

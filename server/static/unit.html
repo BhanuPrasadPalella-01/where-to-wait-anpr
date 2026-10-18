@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patrol Unit</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root { --bg: #0f1419; --panel: #161c23; --line: #2a333d; --text: #e6edf3; --muted: #8b98a5;
+          --blue: #4c9aff; --red: #ff5c5c; --amber: #f5b942; --green: #3fb950; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  header b { font-size: 18px; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.driving { color: var(--blue); border-color: var(--blue); } .pill.waiting { color: var(--green); border-color: var(--green); }
+  main { padding: 12px 16px 28px; display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .task { font-size: 20px; font-weight: 700; }
+  .task.none { color: var(--muted); font-weight: 500; font-size: 16px; }
+  button { width: 100%; margin-top: 10px; padding: 13px; border-radius: 10px; border: 0; font: 700 16px system-ui;
+           background: var(--green); color: #07150a; cursor: pointer; }
+  button:disabled { background: #22303a; color: var(--muted); cursor: default; }
+  .plate { font: 700 26px ui-monospace, monospace; letter-spacing: 2px; background: #f4f4f0; color: #111; display: inline-block;
+           padding: 3px 12px; border-radius: 6px; border: 2px solid #111; }
+  .meta { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  .crop { margin-top: 8px; max-width: 100%; border-radius: 6px; display: none; }
+  #map { height: 300px; border-radius: 12px; border: 1px solid var(--line); }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5); }
+  .al { border-left: 3px solid var(--line); padding: 6px 0 6px 10px; margin: 6px 0; font-size: 14px; }
+  .al.assign { border-color: var(--amber); } .al.sighting { border-color: var(--blue); }
+  .al.intercept { border-color: var(--green); } .al.escape { border-color: var(--red); }
+  .al small { color: var(--muted); display: block; }
+  .banner { display: none; padding: 12px 14px; border-radius: 12px; font-weight: 700; }
+  .banner.intercept { display: block; background: #12361b; border: 1px solid var(--green); color: #8ef0a4; }
+  .banner.escape { display: block; background: #3a1414; border: 1px solid var(--red); color: #ffb3b3; }
+</style>
+</head>
+<body>
+<header><b id="name">Unit</b><span class="pill" id="state">idle</span></header>
+<main>
+  <div class="banner" id="banner"></div>
+  <div class="card">
+    <h2>Your assignment</h2>
+    <div class="task none" id="task">No assignment — stand by.</div>
+    <div class="meta" id="eta"></div>
+    <button id="ack" disabled>Acknowledge</button>
+  </div>
+  <div class="card">
+    <h2>Wanted vehicle</h2>
+    <div id="vehicle" class="meta">No active case.</div>
+    <img class="crop" id="crop" alt="plate photo from the last sighting">
+  </div>
+  <div id="map"></div>
+  <div class="card"><h2>Alerts</h2><div id="alerts" class="meta">None yet.</div></div>
+</main>
+<script>
+const NAME = decodeURIComponent(location.pathname.split('/').pop());
+document.getElementById('name').textContent = NAME;
+document.title = NAME + ' — Patrol';
+const map = L.map('map', { zoomControl: false });
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'dark-tiles',
+  attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+const lay = L.layerGroup().addTo(map);
+const ll = p => [p[1], p[0]];
+const fmt = s => s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`;
+let pendingAck = null, fitted = false, lastThumb = null;
+
+document.getElementById('ack').onclick = async () => {
+  if (!pendingAck) return;
+  await fetch(`/api/alerts/${pendingAck}/ack`, { method: 'POST' });
+  refresh();
+};
+
+async function refresh() {
+  const r = await fetch('/api/units/' + encodeURIComponent(NAME));
+  if (!r.ok) { document.getElementById('task').textContent = 'Unknown unit.'; return; }
+  const d = await r.json(), u = d.unit;
+  const st = document.getElementById('state');
+  st.textContent = u.state; st.className = 'pill ' + u.state;
+
+  const task = document.getElementById('task');
+  if (u.target != null) {
+    task.className = 'task';
+    task.textContent = u.state === 'waiting' ? `Hold position at junction ${u.target}` : `Proceed to junction ${u.target}`;
+    document.getElementById('eta').textContent = u.state === 'waiting' ? 'In position. Wait for the officer’s instruction before any stop.'
+      : `ETA ${fmt(u.eta)} · route shown on the map`;
+  } else {
+    task.className = 'task none'; task.textContent = 'No assignment — stand by.';
+    document.getElementById('eta').textContent = '';
+  }
+  const ack = document.getElementById('ack');
+  pendingAck = u.alert && !u.alert.acked ? u.alert.id : null;
+  ack.disabled = !pendingAck;
+  ack.textContent = u.alert ? (u.alert.acked ? 'Acknowledged ✔' : 'Acknowledge') : 'Acknowledge';
+
+  const v = d.case && d.case.vehicle, vbox = document.getElementById('vehicle');
+  if (d.case) {
+    vbox.innerHTML = `<span class="plate">${d.case.plate}</span>` + (v ? `<div class="meta">${[v.colour, v.make_model || v.vehicle_type].filter(Boolean).join(' ')}
+      · case ${v.case_no} · ${v.offence} · severity ${v.severity}/5</div>` : '');
+    if (d.last_sighting) vbox.innerHTML += `<div class="meta">Last seen at junction ${d.last_sighting.camera} by ${d.last_sighting.source}</div>`;
+  } else vbox.textContent = 'No active case.';
+  const crop = document.getElementById('crop');
+  if (d.last_sighting && d.last_sighting.thumb) {
+    if (lastThumb !== d.last_sighting.id) { crop.src = `/api/thumb/sighting/${d.last_sighting.id}`; lastThumb = d.last_sighting.id; }
+    crop.style.display = 'block';
+  } else crop.style.display = 'none';
+
+  lay.clearLayers();
+  for (const seg of d.track) if (seg.paths.length)
+    L.polyline(seg.paths[0].lonlat.map(ll), { color: '#ff5c5c', weight: 3, opacity: .7 }).addTo(lay);
+  if (u.path.length > 1) L.polyline(u.path.map(ll), { color: '#4c9aff', weight: 5 }).addTo(lay);
+  L.circleMarker(ll(u.lonlat), { radius: 8, color: '#fff', weight: 2, fillColor: '#4c9aff', fillOpacity: 1 })
+    .bindTooltip('You').addTo(lay);
+  if (u.target_lonlat) L.circleMarker(ll(u.target_lonlat), { radius: 11, color: '#3fb950', weight: 3, fill: false })
+    .bindTooltip('Your junction').addTo(lay);
+  if (d.last_sighting) L.circleMarker(ll(d.last_sighting.lonlat), { radius: 7, color: '#fff', weight: 2,
+    fillColor: '#ff5c5c', fillOpacity: 1 }).bindTooltip('Last sighting').addTo(lay);
+  if (!fitted) { map.fitBounds(L.latLngBounds([ll(u.lonlat), ...(u.target_lonlat ? [ll(u.target_lonlat)] : [])]).pad(0.5), { maxZoom: 16 }); fitted = true; }
+
+  document.getElementById('alerts').innerHTML = d.alerts.map(a =>
+    `<div class="al ${a.kind}">${a.message}<small>${new Date(a.created_at * 1000).toLocaleTimeString()}${a.recipient === NAME ? (a.acked_at ? ' · acknowledged' : ' · not acknowledged') : ' · broadcast'}</small></div>`).join('')
+    || 'None yet.';
+  const b = document.getElementById('banner'), last = d.alerts.find(a => a.kind === 'intercept' || a.kind === 'escape');
+  if (last) { b.className = 'banner ' + last.kind; b.textContent = last.message; } else b.className = 'banner';
+}
+refresh();
+setInterval(refresh, 1500);
+</script>
+</body>
+</html>
