@@ -3,6 +3,9 @@
 Sightings come from the demo chase (simulated) or from real edge cameras via POST /api/sighting.
 Every accepted sighting updates the belief and produces a *proposed* plan; units only move after
 the officer approves it (PDF Phase 10 step 14). Rejected or flagged sightings never move units.
+
+Persistent records (registered vehicles, sightings, plate reads, reconstructed routes, alerts and the
+audit log) live in the SQLite store in server/db.py; an in-memory store is used when none is given.
 """
 from __future__ import annotations
 
@@ -10,12 +13,16 @@ import random
 import time
 from dataclasses import dataclass, field
 
-from planner.belief import Sighting
+from planner.belief import ParticleBelief, Sighting
 from planner.fugitive import BACKSTREET, PLANNER_MODELS
-from planner.belief import ParticleBelief
 from planner.plan import coverage_sets, greedy_plan, unit_etas
+from planner.reconstruct import reconstruct
 from planner.roadgraph import INF, dijkstra
 from planner.simulate import (DISPATCH, MARGIN, N_PARTICLES, RECALL, STICKY, STICKY_WAITING, Unit, World)
+
+from .db import Database
+
+ACK_TIMEOUT = 30.0  # wall-clock seconds before an unacknowledged assignment is flagged to the officer
 
 
 @dataclass
@@ -28,16 +35,19 @@ class Camera:
 @dataclass
 class Event:
     t: float
-    kind: str      # info | sighting | flag | plan | approve | reject | intercept | escape | camera
+    kind: str      # info | sighting | flag | plan | approve | reject | intercept | escape | camera | alert
     text: str
     data: dict = field(default_factory=dict)
 
 
 class ControlRoom:
-    def __init__(self, coverage: float = 0.25, n_units: int = 4, seed: int = 7, world: World | None = None):
+    def __init__(self, coverage: float = 0.25, n_units: int = 4, seed: int = 7, world: World | None = None,
+                 db: Database | None = None):
         self.W = world or World()
         self.g = self.W.g
+        self.db = db or Database(":memory:")
         self.coverage, self.n_units = coverage, n_units
+        self._registry, self._registry_t = [], 0.0
         self.reset(seed)
 
     # ------------------------------------------------------------------ setup
@@ -48,11 +58,14 @@ class ControlRoom:
         self.cameras = {c: Camera(c) for c in rng.sample(self.W.junctions, int(self.coverage * len(self.W.junctions)))}
         self.units = {f"Unit {i + 1}": Unit(rng.choice(self.W.junctions)) for i in range(self.n_units)}
         self.t = 0.0
-        self.case = None          # {"plate", "incident", "reported_at"}
+        self.case = None          # {"plate", "incident", "reported_at", "live", "vehicle"}
         self.belief = None
         self.last_ok: Sighting | None = None
+        self.last_ok_sid: int | None = None  # database id of the last accepted sighting
         self.sightings: list[dict] = []
+        self.track: list[dict] = []          # reconstructed route segments between accepted sightings
         self.pending_plan: list[tuple[str, int]] | None = None
+        self.unit_alert: dict[str, dict] = {}  # unit -> {"id", "sent_wall", "acked"}
         self.events: list[Event] = []
         self.chase = None         # demo ground truth: {"route", "first_t", "next_i", "model"}
         self.outcome = None
@@ -68,6 +81,39 @@ class ControlRoom:
     def log(self, kind, text, **data):
         self.events.append(Event(round(self.t, 1), kind, text, data))
         self.events = self.events[-200:]
+        if kind != "info":  # decisions and evidence go to the audit log
+            self.db.audit(kind, text, t_sim=round(self.t, 1))
+
+    # ------------------------------------------------------------------ hotlist registry
+    def register_vehicle(self, **fields) -> dict:
+        v = self.db.register_vehicle(**fields)
+        self._registry_t = 0.0
+        self.log("register", f"Vehicle {v['plate']} registered on the hotlist (case {v['case_no']}, "
+                             f"{v['offence']}, severity {v['severity']}).")
+        return v
+
+    def close_vehicle(self, vid: int, actor: str = "officer"):
+        self.db.close_vehicle(vid, actor)
+        self._registry_t = 0.0
+
+    def registry(self) -> list[dict]:
+        if time.time() - self._registry_t > 5:
+            self._registry, self._registry_t = self.db.vehicles(), time.time()
+        return self._registry
+
+    def hotlist(self) -> list[str]:
+        plates = list(self.db.hotlist())
+        if self.case and self.case["plate"] not in plates:
+            plates.append(self.case["plate"])
+        return plates
+
+    def describe(self, plate: str | None = None) -> str:
+        v = (self.case or {}).get("vehicle") if plate is None else self.db.active_vehicle(plate)
+        plate = plate or (self.case or {}).get("plate", "")
+        if not v:
+            return plate
+        bits = " ".join(b for b in (v.get("colour"), v.get("make_model") or v.get("vehicle_type")) if b)
+        return f"{plate}{' — ' + bits if bits else ''} (case {v['case_no']}, {v['offence']})"
 
     # ------------------------------------------------------------------ demo chase
     def start_demo(self, plate: str = "TS09EK4417", held_out: bool = False):
@@ -81,11 +127,14 @@ class ControlRoom:
         self.chase = {"route": route, "first_t": first_t, "next_i": 1, "model": model, "pending": []}
         self.open_case(plate, incident)
 
-    def open_case(self, plate: str, incident: int | None = None):
+    def open_case(self, plate: str, incident: int | None = None, vehicle: dict | None = None):
         plate = "".join(c for c in plate.upper() if c.isalnum())
-        self.case = {"plate": plate, "incident": incident, "reported_at": self.t, "live": incident is None}
+        vehicle = vehicle or self.db.active_vehicle(plate)
+        self.case = {"plate": plate, "incident": incident, "reported_at": self.t, "live": incident is None,
+                     "vehicle": vehicle}
         self.belief = None
         self.last_ok = None
+        self.last_ok_sid = None
         if incident is not None:
             self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self.seed + 7)
             self.belief.reseed(incident, self.t)
@@ -97,6 +146,7 @@ class ControlRoom:
             self.cameras = {e["junction"]: Camera(e["junction"]) for e in self.edges.values()}
             self.log("info", f"Hotlist entry {plate} opened (live mode, {len(self.cameras)} real camera(s)). "
                              f"Waiting for a camera to read it.")
+        self.db.audit("case", f"Tracking opened for {self.describe()}", t_sim=self.t)
 
     # ------------------------------------------------------------------ sightings
     def add_sighting(self, camera: int, t: float | None = None, plate: str | None = None,
@@ -107,15 +157,17 @@ class ControlRoom:
         rec = {"id": self.seq, "camera": camera, "t": round(t, 1), "plate": plate or (self.case or {}).get("plate"),
                "score": round(score, 3), "status": "accepted", "source": source,
                "lonlat": self.g.xy[camera], "thumb": thumb}
+        prev, prev_sid = self.last_ok, self.last_ok_sid
+        accepted = False
         if self.case is None:
             rec["status"] = "no active case"
         elif self.last_ok is None:  # live case: the first camera read starts the belief
             self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self.seed + 7)
             self.belief.reseed(camera, t)
             self.last_ok = s
+            accepted = True
             self.log("sighting", f"Sighting #{self.seq}: {rec['plate']} read by {source} at junction {camera} "
                                  f"(score {score:.2f}) — first sighting, belief started.", id=self.seq)
-            self.propose_plan(f"sighting #{self.seq}")
         elif t < self.last_ok.t:
             rec["status"] = "stale (older than current belief)"
         elif not self.W.gate.feasible(self.last_ok, s):
@@ -127,11 +179,39 @@ class ControlRoom:
         else:
             self.last_ok = s
             self.belief.condition(s)
+            accepted = True
             self.log("sighting", f"Sighting #{self.seq}: {rec['plate']} read by {source} at junction {camera} "
                                  f"(score {score:.2f}) — accepted, belief updated.", id=self.seq)
+
+        vid = (self.case or {}).get("vehicle", {}) or {}
+        rec["db_id"] = self.db.add_sighting(rec, vid.get("id"))
+        if accepted:
+            self.last_ok_sid = rec["db_id"]
+            if prev is not None:
+                self._reconstruct(prev, s, prev_sid, rec["db_id"], vid.get("id"))
+            self.db.add_alert("all stations", "sighting",
+                              f"Wanted {self.describe()} sighted at junction {camera} by {source}.",
+                              vid.get("id"), camera, self.g.xy[camera])
             self.propose_plan(f"sighting #{self.seq}")
         self.sightings.append(rec)
         return rec
+
+    def _reconstruct(self, a: Sighting, b: Sighting, a_sid, b_sid, vehicle_id):
+        """Rebuild the road the car most likely took between two accepted sightings (Yen's K paths)."""
+        paths = reconstruct(self.g, a.camera, b.camera, b.t - a.t)
+        for p in paths:
+            p["lonlat"] = [self.g.xy[n] for n in p["nodes"]]
+        seg = {"from": a.camera, "to": b.camera, "t0": a.t, "t1": b.t,
+               "paths": [{k: v for k, v in p.items() if k != "nodes"} for p in paths]}
+        self.track.append(seg)
+        if paths:
+            self.db.add_routes(vehicle_id, a_sid, b_sid, seg["paths"])
+            best = paths[0]
+            self.log("route", f"Route {a.camera} → {b.camera} reconstructed: {len(paths)} feasible path(s); "
+                              f"best {best['travel_s']:.0f} s free-flow vs {b.t - a.t:.0f} s observed "
+                              f"({100 * best['share']:.0f}% share).")
+        else:
+            self.log("route", f"No feasible road path {a.camera} → {b.camera} in {b.t - a.t:.0f} s.")
 
     # ------------------------------------------------------------------ planning
     def propose_plan(self, reason: str):
@@ -164,9 +244,18 @@ class ControlRoom:
     def approve(self):
         if not self.pending_plan:
             return
+        vid = ((self.case or {}).get("vehicle") or {}).get("id")
         for u, v in self.pending_plan:
+            if self.units[u].target == v:
+                continue
             self.units[u].send(self.g, v, self.t)
-        self.log("approve", f"Officer approved: {', '.join(f'{u} → junction {v}' for u, v in self.pending_plan)}.")
+            eta = max(0.0, self.units[u].schedule[-1][1] - self.t) if self.units[u].schedule else 0.0
+            a = self.db.add_alert(u, "assign", f"Proceed to junction {v} and wait (ETA {eta:.0f} s). "
+                                               f"Wanted: {self.describe()}. Officer-led stop only.",
+                                  vid, v, self.g.xy[v])
+            self.unit_alert[u] = {"id": a["id"], "sent_wall": time.time(), "acked": False, "flagged": False}
+        self.log("approve", f"Officer approved: {', '.join(f'{u} → junction {v}' for u, v in self.pending_plan)}. "
+                            f"Alerts sent to units.")
         self.pending_plan = None
 
     def reject(self):
@@ -174,21 +263,40 @@ class ControlRoom:
             self.log("reject", "Officer rejected the plan; units keep their positions.")
         self.pending_plan = None
 
+    def ack_alert(self, aid: int) -> dict | None:
+        a = self.db.ack_alert(aid)
+        if a:
+            st = self.unit_alert.get(a["recipient"])
+            if st and st["id"] == aid:
+                st["acked"] = True
+            self.log("alert", f"{a['recipient']} acknowledged: {a['message'][:60]}…")
+        return a
+
+    def check_acks(self, now: float):
+        """PDF Layer 5: an assignment not acknowledged in time is flagged so the officer can re-plan."""
+        for u, st in self.unit_alert.items():
+            if not st["acked"] and not st["flagged"] and now - st["sent_wall"] > ACK_TIMEOUT:
+                st["flagged"] = True
+                self.log("alert", f"{u} has not acknowledged its assignment for {ACK_TIMEOUT:.0f} s — "
+                                  f"check the radio or re-plan without it.")
+
     # ------------------------------------------------------------------ edge cameras
     def edge_junctions(self):
         """Junctions for live cameras: consecutive spots ~45 s apart along a real main road through the
         centre (so a car passing phone A then phone B is a plausible journey), plus far-away spots."""
         if self._edge_route is None:
-            rng = random.Random(99)
             start = min(self.W.central, key=lambda u: sum(abs(a - b) for a, b in zip(self.g.xy[u], self._centre())))
-            route = self.W.sampler.sample("main_road", start, 0.0, rng, 1e9, exit_node=self.W.exits[0])
-            spots, last_t = [route[0][0]], 0.0
-            for v, t in route:
-                if t - last_t >= 45 and len(self.g.adj[v]) >= 3:
-                    spots.append(v)
-                    last_t = t
-            dist = dijkstra(self.g, start)[0]
-            far = sorted(self.W.junctions, key=lambda u: -dist[u] if dist[u] < INF else 0)[:5]
+            from_start = dijkstra(self.g, start)[0]
+            junctions = set(self.W.junctions)
+            # chain of spots, each 40–60 s' drive from the previous one, moving outward from the centre
+            spots = [start]
+            for _ in range(8):
+                dist = dijkstra(self.g, spots[-1])[0]
+                cands = [v for v in junctions if 40 <= dist[v] <= 60 and v not in spots]
+                if not cands:
+                    break
+                spots.append(max(cands, key=lambda v: from_start[v] if from_start[v] < INF else -1))
+            far = sorted(self.W.junctions, key=lambda u: -from_start[u] if from_start[u] < INF else 0)[:5]
             self._edge_route = {"route": spots, "far": far}
         return self._edge_route
 
@@ -221,17 +329,33 @@ class ControlRoom:
         e["reads"] += 1
         self.read_seq = getattr(self, "read_seq", 0) + 1
         plate = r["plate"]
+        matched = r.get("hotlist_plate") if r.get("matched") and r.get("score", 0) >= theta else None
+        # a registered vehicle seen while nothing is being tracked: start tracking it automatically
+        if matched and self.case is None:
+            v = self.db.active_vehicle(matched)
+            if v:
+                self.log("alert", f"Hotlist hit: {self.describe(matched)} read by {r['name']} — tracking started.")
+                self.open_case(matched, vehicle=v)
         target = (self.case or {}).get("plate")
-        hit = bool(target and r.get("matched") and r.get("hotlist_plate") == target and r.get("score", 0) >= theta)
-        rec = {"rid": self.read_seq, "t": round(self.t, 1), "camera": r["name"], "junction": e["junction"], "plate": plate,
-               "conf": r.get("conf"), "score": r.get("score"), "hit": hit, "thumb": r.get("thumb")}
+        hit = bool(matched and matched == target)
+        rec = {"rid": self.read_seq, "t": round(self.t, 1), "camera": r["name"], "junction": e["junction"],
+               "plate": plate, "conf": r.get("conf"), "score": r.get("score"), "hit": hit,
+               "hotlist": bool(matched), "thumb": r.get("thumb")}
         self.reads.append(rec)
         self.reads = self.reads[-80:]
+        self.db.add_read(rec)
         if hit:
             e["matches"] += 1
             s = self.add_sighting(e["junction"], None, plate, float(r.get("score", 1.0)), source=r["name"],
                                   thumb=r.get("thumb"))
             rec["status"] = s["status"]
+        elif matched:  # another registered vehicle: tell the stations, do not divert the active case
+            v = self.db.active_vehicle(matched)
+            self.db.add_alert("all stations", "sighting",
+                              f"Registered vehicle {self.describe(matched)} seen by {r['name']} at junction "
+                              f"{e['junction']} (not the active case).", v and v["id"], e["junction"],
+                              self.g.xy[e["junction"]])
+            self.log("alert", f"Registered vehicle {matched} seen by {r['name']} (not the active case); stations told.")
         return rec
 
     def edge_heartbeat(self, name: str, now: float):
@@ -281,6 +405,13 @@ class ControlRoom:
                 break
         return node
 
+    def _finish(self, outcome: dict, text: str):
+        self.outcome = outcome
+        self.log(outcome["kind"], text)
+        vid = ((self.case or {}).get("vehicle") or {}).get("id")
+        node = outcome.get("node")
+        self.db.add_alert("all units", outcome["kind"], text, vid, node, self.g.xy[node] if node is not None else None)
+
     def step(self, dt: float):
         """Advance the demo clock: deliver camera reads, check interception/escape, decay belief."""
         if self.outcome:
@@ -297,22 +428,33 @@ class ControlRoom:
                     ch["pending"].append((tv + self.rng.uniform(2, 6), v, tv))
                 for u, x in self.units.items():  # interception: a unit waiting here long enough
                     if x.target == v and x.schedule and x.schedule[-1][1] + MARGIN <= tv:
-                        self.outcome = {"kind": "intercept", "unit": u, "node": v, "t": tv}
-                        self.log("intercept", f"INTERCEPTED by {u} at junction {v} (t = {tv:.0f} s). "
-                                              f"Officer-led stop.")
+                        self._finish({"kind": "intercept", "unit": u, "node": v, "t": tv},
+                                     f"INTERCEPTED by {u} at junction {v} (t = {tv:.0f} s). Officer-led stop.")
                         return
             due = [p for p in ch["pending"] if p[0] <= self.t]
             ch["pending"] = [p for p in ch["pending"] if p[0] > self.t]
             for _, v, tv in due:
                 self.add_sighting(v, tv, score=round(self.rng.uniform(0.85, 0.99), 2))
             if ch["next_i"] >= len(route) and not self.outcome:
-                self.outcome = {"kind": "escape", "t": route[-1][1]}
-                self.log("escape", f"Suspect left the area at t = {route[-1][1]:.0f} s.")
+                self._finish({"kind": "escape", "t": route[-1][1]}, f"Suspect left the area at t = {route[-1][1]:.0f} s.")
         if self.belief and self.last_ok:
             live = {c: RECALL for c, cam in self.cameras.items() if cam.live and c != self.last_ok.camera}
             self.belief.negative_evidence(self.t, live)
 
     # ------------------------------------------------------------------ view
+    def unit_view(self, u: str) -> dict:
+        x = self.units[u]
+        g = self.g
+        pos = x.position(self.t)
+        waiting = bool(x.schedule) and x.schedule[-1][1] <= self.t and x.target is not None
+        st = self.unit_alert.get(u)
+        return {"id": u, "lonlat": g.xy[pos], "target": x.target,
+                "target_lonlat": g.xy[x.target] if x.target is not None else None,
+                "state": "waiting" if waiting else ("driving" if x.target is not None else "idle"),
+                "path": [g.xy[pos]] + ([g.xy[v] for v, tv in x.schedule if tv >= self.t] if x.schedule else []),
+                "eta": max(0.0, x.schedule[-1][1] - self.t) if x.schedule and not waiting else 0.0,
+                "alert": st and {"id": st["id"], "acked": st["acked"], "late": st["flagged"] and not st["acked"]}}
+
     def snapshot(self, show_truth: bool = True) -> dict:
         g = self.g
         particles = []
@@ -329,31 +471,25 @@ class ControlRoom:
             top = sorted(agg.items(), key=lambda x: -x[1])[:250]
             mx = max((w for _, w in top), default=1.0)
             particles = [[*g.xy[v], round(w / mx, 3)] for v, w in top]
-        units = []
-        for u, x in self.units.items():
-            pos = x.position(self.t)
-            waiting = bool(x.schedule) and x.schedule[-1][1] <= self.t and x.target is not None
-            path = [g.xy[v] for v, tv in x.schedule if tv >= self.t] if x.schedule else []
-            units.append({"id": u, "lonlat": g.xy[pos], "target": x.target,
-                          "target_lonlat": g.xy[x.target] if x.target is not None else None,
-                          "state": "waiting" if waiting else ("driving" if x.target is not None else "idle"),
-                          "path": [g.xy[pos]] + path})
         pend = [{"unit": u, "from": g.xy[self.units[u].position(self.t)], "to": g.xy[v], "node": v}
                 for u, v in (self.pending_plan or [])]
         snap = {
             "t": round(self.t, 1), "seed": self.seed,
             "case": self.case and {**self.case, "lonlat": g.xy[self.case["incident"]] if self.case["incident"] is not None else None},
             "cameras": [{"node": c, "lonlat": g.xy[c], "live": cam.live} for c, cam in self.cameras.items()],
-            "units": units, "pending_plan": pend, "particles": particles,
+            "units": [self.unit_view(u) for u in self.units], "pending_plan": pend, "particles": particles,
             "plan_prob": round(getattr(self, "plan_prob", 0.0), 3),
             "sightings": [{k: v for k, v in x.items() if k != "thumb"} | {"thumb": bool(x.get("thumb"))}
                           for x in self.sightings[-30:]],
+            "track": self.track[-20:],
             "events": [e.__dict__ for e in self.events[-60:]],
             "outcome": self.outcome,
             "reachable": self.belief.reachable_set_size(self.t) if self.belief else 0,
             "edges": [{**{k: v for k, v in e.items()}, "lonlat": g.xy[e["junction"]]} for e in self.edges.values()],
             "reads": [{k: v for k, v in r.items() if k != "thumb"} | {"has_thumb": bool(r.get("thumb"))}
                       for r in self.reads[-25:]],
+            "registry": self.registry(),
+            "alerts": self.db.alerts(limit=15),
         }
         if show_truth and self.chase:
             n = self.suspect_node()
