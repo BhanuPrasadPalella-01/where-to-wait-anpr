@@ -104,8 +104,9 @@ class Unit:
 class World:
     """Everything that depends only on the map: built once per worker process."""
 
-    def __init__(self, graph_file: str = "city_graph.json"):
-        self.g = RoadGraph.load(ROOT / "data" / graph_file)
+    def __init__(self, graph_file: str = "city_graph.json", g: RoadGraph | None = None):
+        # g: an in-memory graph (tests use a small synthetic grid instead of the downloaded city)
+        self.g = g if g is not None else RoadGraph.load(ROOT / "data" / graph_file)
         self.exits = pick_exits(self.g)
         self.sampler = RouteSampler(self.g, self.exits)
         self.gate = FeasibilityGate(self.g)

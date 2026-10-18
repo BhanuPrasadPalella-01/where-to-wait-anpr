@@ -34,8 +34,8 @@ class Event:
 
 
 class ControlRoom:
-    def __init__(self, coverage: float = 0.25, n_units: int = 4, seed: int = 7):
-        self.W = World()
+    def __init__(self, coverage: float = 0.25, n_units: int = 4, seed: int = 7, world: World | None = None):
+        self.W = world or World()
         self.g = self.W.g
         self.coverage, self.n_units = coverage, n_units
         self.reset(seed)
