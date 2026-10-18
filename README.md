@@ -42,7 +42,8 @@ edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
            hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact),
-           test_camera_node.py (OCR vote, read backlog)
+           test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
+           camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
 reports/   RESULTS.md, fact_check.md, result tables and raw episode logs (.jsonl)
 ```
@@ -55,6 +56,7 @@ python3 -m venv .venv
 .venv/bin/python -m planner.roadgraph            # download the OSM road graph (edit DEFAULT_CENTER for your city)
 .venv/bin/python -m tests.test_roadgraph
 .venv/bin/python -m tests.test_planner
+.venv/bin/python -m pytest -q tests                # graph-free unit tests (control room, edge node)
 .venv/bin/python -m planner.simulate --name demo --coverages 0.1,0.3 --runs 50
 .venv/bin/python scripts/plot_results.py demo
 ```
@@ -92,7 +94,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: control-room dashboard (FastAPI + WebSocket + Leaflet) with officer approval, clone flagging,
   camera-offline handling and a demo chase.
 * Done: live mode with real edge cameras (`edge/camera_node.py`, [`DEMO.md`](DEMO.md)).
-* Next: see [`ROADMAP.md`](ROADMAP.md) — control-room tests, CI, SUMO replication fix (TraCI stop
+* Done: pytest tests for the control room on a synthetic grid graph.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — graph-free planner tests, CI, SUMO replication fix (TraCI stop
   position on very short edges), signed messaging with replay, multiple suspects.
 
 ## Data and ethics

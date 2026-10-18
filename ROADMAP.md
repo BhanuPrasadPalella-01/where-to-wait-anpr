@@ -9,7 +9,7 @@ Mark an item `[x]` when it is done and add the date.
       a README "Live demo" section, this roadmap, and `.claude/` in `.gitignore`.
 
 ## Reliability
-- [ ] **Control-room tests** — pytest tests for `server/control_room.py`: live case opening, first
+- [x] (2026-10-18) **Control-room tests** — pytest tests for `server/control_room.py`: live case opening, first
       sighting starts the belief, feasibility gate flags an impossible journey, officer approval
       moves units, camera heartbeat timeout marks a camera blind, edge read with/without a hotlist
       match. Build a tiny synthetic graph so tests do not need the downloaded city map.
