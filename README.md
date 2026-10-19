@@ -137,7 +137,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
   camera-offline handling and a demo chase.
 * Done: live mode with real edge cameras (`edge/camera_node.py`, [`DEMO.md`](DEMO.md)).
 * Done: pytest tests for the control room on a synthetic grid graph.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — graph-free planner tests, CI, SUMO replication fix (TraCI stop
+* Done: graph-free Dijkstra/Yen and greedy-vs-exact tests; city-map tests skip when the map is missing.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — CI, SUMO replication fix (TraCI stop
   position on very short edges), signed messaging with replay, multiple suspects.
 
 ## Data and ethics

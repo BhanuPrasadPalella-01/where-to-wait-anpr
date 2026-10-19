@@ -13,7 +13,7 @@ Mark an item `[x]` when it is done and add the date.
       sighting starts the belief, feasibility gate flags an impossible journey, officer approval
       moves units, camera heartbeat timeout marks a camera blind, edge read with/without a hotlist
       match. Build a tiny synthetic graph so tests do not need the downloaded city map.
-- [ ] **Graph-free test fixtures** — make `tests/test_roadgraph.py` and `tests/test_planner.py` skip
+- [x] (2026-10-19) **Graph-free test fixtures** — make `tests/test_roadgraph.py` and `tests/test_planner.py` skip
       cleanly (pytest.skip) when `data/city_graph.json` is missing, and add synthetic-graph versions
       of the Dijkstra/Yen/greedy checks that always run.
 - [ ] **Continuous integration** — GitHub Actions workflow running the graph-free tests on push
