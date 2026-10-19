@@ -34,3 +34,27 @@ def grid_graph(rows: int = 9, cols: int = 9, side_s: float = 30.0, main_s: float
                 if on_main:
                     main.add((u, v))
     return RoadGraph(xy, [sorted(a) for a in adj], main, list(range(rows * cols)))
+
+
+def random_graph(n: int = 60, extra: int = 120, seed: int = 0) -> RoadGraph:
+    """Strongly connected random road graph with uneven travel times (5-60 s per edge).
+
+    A random two-way spanning tree keeps every node reachable; `extra` one-way shortcuts on top give
+    many alternative routes, so Dijkstra and Yen are exercised on something less regular than a grid.
+    """
+    import random
+    rng = random.Random(seed)
+    xy = [(ORIGIN[0] + rng.random() * 0.03, ORIGIN[1] + rng.random() * 0.03) for _ in range(n)]
+    w: dict[tuple[int, int], float] = {}
+    for v in range(1, n):
+        u = rng.randrange(v)
+        w[(u, v)] = round(rng.uniform(5, 60), 1)
+        w[(v, u)] = round(rng.uniform(5, 60), 1)
+    while len(w) < 2 * (n - 1) + extra:
+        u, v = rng.randrange(n), rng.randrange(n)
+        if u != v and (u, v) not in w:
+            w[(u, v)] = round(rng.uniform(5, 60), 1)
+    adj: list[list[tuple[int, float]]] = [[] for _ in range(n)]
+    for (u, v), c in sorted(w.items()):
+        adj[u].append((v, c))
+    return RoadGraph(xy, adj, set(), list(range(n)))
