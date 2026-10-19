@@ -43,8 +43,9 @@ server/    control_room.py (case state, gate, belief, plan, officer approval, al
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
            hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py
-tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact),
-           test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
+tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
+           city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
+           (the same checks on synthetic graphs, always run), test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
            camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed),
            test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -94,10 +95,10 @@ An assignment not acknowledged within 30 s is flagged on the dashboard.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pytest -q tests                # all unit tests; city-map tests skip until the map exists
 .venv/bin/python -m planner.roadgraph            # download the OSM road graph (edit DEFAULT_CENTER for your city)
-.venv/bin/python -m tests.test_roadgraph
+.venv/bin/python -m tests.test_roadgraph         # full-size runs on the city map, with timings
 .venv/bin/python -m tests.test_planner
-.venv/bin/python -m pytest -q tests                # graph-free unit tests (control room, edge node)
 .venv/bin/python -m planner.simulate --name demo --coverages 0.1,0.3 --runs 50
 .venv/bin/python scripts/plot_results.py demo
 ```
