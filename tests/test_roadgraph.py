@@ -16,8 +16,7 @@ def to_nx(g: RoadGraph) -> nx.DiGraph:
     return G
 
 
-def run(n_pairs=1000, n_yen=30, k=5):
-    g = RoadGraph.load(ROOT / "data" / "city_graph.json")
+def run(g: RoadGraph, n_pairs=1000, n_yen=30, k=5):
     G = to_nx(g)
     rng = random.Random(0)
     pairs = [(rng.randrange(g.n), rng.randrange(g.n)) for _ in range(n_pairs)]
@@ -53,9 +52,9 @@ def run(n_pairs=1000, n_yen=30, k=5):
           f"ours {1000 * t_ours / n_yen:.0f} ms/pair, networkx {1000 * t_nx / n_yen:.0f} ms/pair")
 
 
-def test_roadgraph():
-    run(200, 10)
+def test_roadgraph(city_graph):
+    run(city_graph, 200, 10)
 
 
 if __name__ == "__main__":
-    run()
+    run(RoadGraph.load(ROOT / "data" / "city_graph.json"))

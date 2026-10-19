@@ -40,8 +40,8 @@ def test_negative_evidence():
     assert via4 > via2, (via4, via2)
 
 
-def test_greedy_vs_exact(n_cases=20):
-    g = RoadGraph.load(ROOT / "data" / "city_graph.json")
+def test_greedy_vs_exact(city_graph, n_cases=20):
+    g = city_graph
     exits = pick_exits(g)
     s = RouteSampler(g, exits)
     rng = random.Random(0)
@@ -71,4 +71,4 @@ def test_greedy_vs_exact(n_cases=20):
 if __name__ == "__main__":
     test_gate(); print("gate: ok")
     test_negative_evidence(); print("negative evidence: ok")
-    test_greedy_vs_exact()
+    test_greedy_vs_exact(RoadGraph.load(ROOT / "data" / "city_graph.json"))
