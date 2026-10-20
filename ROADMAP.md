@@ -16,7 +16,7 @@ Mark an item `[x]` when it is done and add the date.
 - [x] (2026-10-19) **Graph-free test fixtures** — make `tests/test_roadgraph.py` and `tests/test_planner.py` skip
       cleanly (pytest.skip) when `data/city_graph.json` is missing, and add synthetic-graph versions
       of the Dijkstra/Yen/greedy checks that always run.
-- [ ] **Continuous integration** — GitHub Actions workflow running the graph-free tests on push
+- [x] (2026-10-20) **Continuous integration** — GitHub Actions workflow running the graph-free tests on push
       (Python 3.12, CPU only, no model downloads); README badge.
 
 ## Experiments

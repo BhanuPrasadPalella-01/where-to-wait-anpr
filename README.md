@@ -1,5 +1,7 @@
 # Where to Wait — re-planning police interception from sparse, uncertain ANPR sightings
 
+[![tests](https://github.com/BhanuPrasadPalella-01/where-to-wait-anpr/actions/workflows/tests.yml/badge.svg)](https://github.com/BhanuPrasadPalella-01/where-to-wait-anpr/actions/workflows/tests.yml)
+
 A student research prototype. Cameras read number plates; this project asks the harder question that
 ANPR systems leave open: **given a few uncertain sightings of a wanted car, where should patrol units
 wait so they get there first?**
@@ -47,7 +49,9 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
            (the same checks on synthetic graphs, always run), test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
            camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed),
-           test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts)
+           test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts),
+           test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
+.github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
 reports/   RESULTS.md, fact_check.md, result tables and raw episode logs (.jsonl)
 ```
@@ -96,6 +100,7 @@ An assignment not acknowledged within 30 s is flagged on the dashboard.
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest -q tests                # all unit tests; city-map tests skip until the map exists
+# tests only (what CI installs): .venv/bin/pip install -r requirements-test.txt
 .venv/bin/python -m planner.roadgraph            # download the OSM road graph (edit DEFAULT_CENTER for your city)
 .venv/bin/python -m tests.test_roadgraph         # full-size runs on the city map, with timings
 .venv/bin/python -m tests.test_planner
@@ -138,7 +143,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: live mode with real edge cameras (`edge/camera_node.py`, [`DEMO.md`](DEMO.md)).
 * Done: pytest tests for the control room on a synthetic grid graph.
 * Done: graph-free Dijkstra/Yen and greedy-vs-exact tests; city-map tests skip when the map is missing.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — CI, SUMO replication fix (TraCI stop
+* Done: GitHub Actions CI running the unit tests on every push (CPU only, no downloads).
+* Next: see [`ROADMAP.md`](ROADMAP.md) — SUMO replication fix (TraCI stop
   position on very short edges), signed messaging with replay, multiple suspects.
 
 ## Data and ethics
