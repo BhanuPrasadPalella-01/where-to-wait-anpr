@@ -1,0 +1,8 @@
+# Minimal CPU-only environment for the unit tests (used by CI).
+# No torch / ultralytics / OCR models / OSMnx / SUMO: the tests build synthetic road graphs and the
+# city-map tests skip when data/city_graph.json is missing. The full stack is in requirements.txt.
+numpy
+scipy
+networkx
+opencv-python-headless
+pytest
