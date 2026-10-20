@@ -1,5 +1,6 @@
 """Unit tests for the edge camera node helpers: OCR vote, device choice, read backlog (no camera needed)."""
 import numpy as np
+import pytest
 
 from edge.camera_node import Server, pick_device, sharpness, vote
 
@@ -22,8 +23,14 @@ def test_vote_length_by_confidence_mass():
     assert vote(reads)[0] == "KL02BM4659"
 
 
-def test_pick_device():
+def test_pick_device_explicit():
     assert pick_device("cpu") == "cpu"
+    assert pick_device("cuda:1") == "cuda:1"
+
+
+def test_pick_device_auto():
+    # "auto" asks torch which accelerator exists; the CI test environment does not install torch
+    pytest.importorskip("torch")
     assert pick_device("auto") in ("mps", "cuda:0", "cpu")
 
 
