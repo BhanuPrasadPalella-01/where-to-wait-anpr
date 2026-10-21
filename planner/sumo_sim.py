@@ -73,9 +73,24 @@ def sworld() -> SW:
     return _SW
 
 
-def _stop_pos(traci, edge):
-    L = traci.lane.getLength(edge + "_0")
-    return max(0.5 * L, L - 1.0)  # near the end of the edge; safe on very short edges
+def stop_span(length: float) -> tuple[float, float]:
+    """(start, end) of a stop on a lane of this length: near the end, with end > start on any lane.
+
+    The network has 0.1 m edges. An explicit start keeps end > start there instead of relying on SUMO's
+    default start, which earlier runs reported as "End position on lane must be after start position".
+    """
+    end = length if length < 2.0 else length - 1.0
+    return max(0.0, end - 5.0), end
+
+
+def place_stop(traci, vid, edge) -> bool:
+    """Stop vid near the end of edge until replaced. False if SUMO refuses (e.g. too close to brake)."""
+    start, end = stop_span(traci.lane.getLength(edge + "_0"))
+    try:
+        traci.vehicle.setStop(vid, edge, pos=end, startPos=start, duration=1e5)
+        return True
+    except traci.TraCIException:
+        return False
 
 
 def run_episode(seed: int, coverage: float, method: str, demand: str = "normal", k: int = 4,
@@ -106,7 +121,8 @@ def run_episode(seed: int, coverage: float, method: str, demand: str = "normal",
     traci.route.add("sus_r", sus_edges)
     traci.vehicle.add("suspect", "sus_r", typeID="fugitive", depart="now", departSpeed="max", departLane="best")
 
-    units = {u: {"node": x, "veh": None, "target": None, "stopped_at": None, "moves": 0, "started": False}
+    units = {u: {"node": x, "veh": None, "target": None, "stopped_at": None, "moves": 0, "started": False,
+                 "parked": 0}
              for u, x in unit_start.items()}
 
     def unit_position(u, t):
@@ -122,28 +138,42 @@ def run_episode(seed: int, coverage: float, method: str, demand: str = "normal",
             traci.lane.getMaxSpeed(e + "_0"), 1.0)
         return (to if to is not None else x["node"]), rem
 
+    def park(u, vid, target, at):
+        # SUMO cannot stop the car on the last edge (too close to brake, or already past the stop):
+        # take it off the road and let the unit wait at the junction from when it would get there
+        x = units[u]
+        try:
+            traci.vehicle.remove(vid)
+        except traci.TraCIException:
+            pass
+        x["veh"], x["node"], x["stopped_at"] = None, target, at
+        x["parked"] += 1
+
     def send(u, target, t):
         x = units[u]
         if x["target"] == target:
             return
-        pos, _ = unit_position(u, t)
-        path = path_to(dijkstra(g, pos, target=target)[1], target) if pos != target else [pos]
+        pos, rem = unit_position(u, t)
+        dist, parent = dijkstra(g, pos, target=target)
+        path = path_to(parent, target) if pos != target else [pos]
         edges = [W.edge_of[(a, b)] for a, b in zip(path, path[1:])]
         x["moves"] += 1
         x["target"], x["stopped_at"] = target, None
+        delay = 0 if x["started"] else DISPATCH
+        x["started"] = True
+        arrive = t + delay + rem + dist[target]  # free-flow arrival, used only when SUMO refuses the stop
         vid = x["veh"]
         alive = vid is not None and vid in traci.vehicle.getIDList()
         if not alive:
             if not edges:  # already at the junction: wait there
-                x["stopped_at"] = t + (0 if x["started"] else DISPATCH)
-                x["started"] = True
+                x["stopped_at"] = t + delay
                 return
             vid = f"{u}_{x['moves']}"
             traci.route.add(vid + "_r", edges)
-            depart = T0 + t + (0 if x["started"] else DISPATCH)
-            traci.vehicle.add(vid, vid + "_r", typeID="police", depart=str(depart), departLane="best")
-            x["veh"], x["started"] = vid, True
-            traci.vehicle.setStop(vid, edges[-1], pos=_stop_pos(traci, edges[-1]), duration=1e5)
+            traci.vehicle.add(vid, vid + "_r", typeID="police", depart=str(T0 + t + delay), departLane="best")
+            x["veh"] = vid
+            if not place_stop(traci, vid, edges[-1]):
+                park(u, vid, target, arrive)
             return
         try:
             if traci.vehicle.getStops(vid):
@@ -154,10 +184,11 @@ def run_episode(seed: int, coverage: float, method: str, demand: str = "normal",
                 cur = r[min(traci.vehicle.getRouteIndex(vid) + 1, len(r) - 1)]
             new = [cur] + edges if edges else [cur]
             traci.vehicle.setRoute(vid, new)
-            traci.vehicle.setStop(vid, new[-1], pos=_stop_pos(traci, new[-1]), duration=1e5)
         except traci.TraCIException:
-            x["veh"] = None  # vehicle lost (teleported/removed): respawn on next send
-            x["target"] = None
+            park(u, vid, target, arrive)  # vehicle lost (teleported/removed) or route refused
+            return
+        if not place_stop(traci, vid, new[-1]):
+            park(u, vid, target, arrive)
 
     belief = ParticleBelief(W.sampler, n=N_PARTICLES, horizon_s=900, seed=seed + 7)
     pending, sightings_n, last_ok, planned_once = [], 0, None, False
@@ -247,6 +278,7 @@ def run_episode(seed: int, coverage: float, method: str, demand: str = "normal",
     return {"seed": seed, "coverage": coverage, "method": method, "demand": demand, "k": k, "held_out": held_out,
             "true_model": true_model, "intercepted": caught is not None, "t_intercept": caught,
             "escape_t": escape_t, "n_sightings": sightings_n, "moves": sum(x["moves"] for x in units.values()),
+            "parked": sum(x["parked"] for x in units.values()),
             "plan_ms_mean": float(np.mean(plan_ms)) if plan_ms else 0.0, "n_plans": len(plan_ms),
             "free_flow_s": plan_route[-1][1]}
 
