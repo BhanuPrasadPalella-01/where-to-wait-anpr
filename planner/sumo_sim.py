@@ -227,6 +227,8 @@ def run_episode(seed: int, coverage: float, method: str, demand: str = "normal",
                 except traci.TraCIException:
                     pass
 
+        if t < REPORT - 0.5:
+            continue  # crime not reported yet: camera reads so far wait in pending and arrive with the report
         due = [s for a, s in pending if a <= t]
         pending = [(a, s) for a, s in pending if a > t]
         decide = (abs(t - REPORT) < 0.5) or bool(due)
@@ -287,6 +289,11 @@ def _job(a):
     try:
         return run_episode(*a)
     except Exception as e:  # keep the sweep alive; record the failure
+        import traci
+        try:
+            traci.close()  # the failed episode's connection, or the next episode in this worker hangs on it
+        except Exception:
+            pass
         return {"seed": a[0], "coverage": a[1], "method": a[2], "demand": a[3], "error": repr(e)[:300]}
 
 
