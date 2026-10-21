@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 TESTED = ["planner.roadgraph", "planner.fugitive", "planner.belief", "planner.plan", "planner.reconstruct",
-          "planner.simulate", "server.db", "server.control_room", "edge.camera_node"]
+          "planner.simulate", "planner.sumo_sim", "server.db", "server.control_room", "edge.camera_node"]
 HEAVY = ["torch", "ultralytics", "fast_plate_ocr", "onnxruntime", "osmnx", "traci", "sumolib", "pandas",
          "matplotlib", "fastapi"]
 
