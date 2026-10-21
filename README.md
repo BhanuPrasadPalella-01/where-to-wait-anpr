@@ -36,20 +36,20 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            belief.py      feasibility gate + particle belief (conditioning, rejuvenation, negative evidence)
            plan.py        greedy submodular interception planner + brute-force check
            simulate.py    chase simulator, baselines B0/B1/B2, ablations, parallel sweeps
-           sumo_graph.py  planner graph from a SUMO network
            reconstruct.py route reconstruction between sightings (Yen's K paths, space-time feasibility)
            sumo_graph.py  planner graph from a SUMO network
-           sumo_sim.py    SUMO/TraCI replication (work in progress, see below)
+           sumo_sim.py    SUMO/TraCI replication with real traffic (pilot: reports/RESULTS.md section 9)
 server/    control_room.py (case state, gate, belief, plan, officer approval, alerts), db.py (SQLite store),
            app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
-           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py
+           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
            city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
            (the same checks on synthetic graphs, always run), test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
            camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed),
            test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts),
+           test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -144,8 +144,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: pytest tests for the control room on a synthetic grid graph.
 * Done: graph-free Dijkstra/Yen and greedy-vs-exact tests; city-map tests skip when the map is missing.
 * Done: GitHub Actions CI running the unit tests on every push (CPU only, no downloads).
-* Next: see [`ROADMAP.md`](ROADMAP.md) — SUMO replication fix (TraCI stop
-  position on very short edges), signed messaging with replay, multiple suspects.
+* Done: SUMO replication runs without TraCI errors; 160-episode pilot in normal and peak traffic.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — signed messaging with replay, multiple suspects, your own city.
 
 ## Data and ethics
 

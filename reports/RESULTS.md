@@ -149,6 +149,28 @@ check and the officer are the backstop.
 Proposed leads at every fleet size (+6.5 to +10 points); the planner never assigns two units to one
 junction by construction.
 
+## 9. SUMO replication pilot (30% cameras, 4 units, 20 chases per cell, seeds 10,000+)
+
+Same chase, methods and odd-seed held-out driver as section 6, but the suspect and the units are
+SUMO vehicles in background traffic (normal or peak demand, after a 300 s warm-up). The planner still
+knows only free-flow times; SUMO adds signals, queues and congestion. Run with
+`scripts/sumo_pilot.py --runs 20 --demands normal,peak` (20 min on the M4, 8 workers); table in
+`reports/sumo_pilot.md`, rows in `reports/sumo_pilot.jsonl`.
+
+| Demand | B0 chase | B1 checkpoints | B2 plan once | **Proposed** |
+|---|---|---|---|---|
+| normal | 5% (1/20) | 15% (3/20) | 15% (3/20) | **35% (7/20)** |
+| peak | 0% (0/20) | 0% (0/20) | 25% (5/20) | **30% (6/20)** |
+
+* 0 of 160 episodes failed. Before the fixes, 2 of the first 6 trial episodes crashed (camera reads
+  arriving before the crime was reported), and units whose stop SUMO refused ("too close to brake")
+  drove on without a target. Now a refused stop parks the unit at its junction from its free-flow
+  arrival time; this happened in 2 of 160 episodes.
+* The ordering matches the own simulator (Proposed > B2 > B1 > B0), at lower rates than section 6
+  (49% at 30% cameras): units are slowed by real traffic the planner does not model.
+* 20 chases per cell gives wide intervals (Proposed normal: 18–57%), so this is a pilot, not a
+  result: the gap to B2 is not significant yet. The full replication needs ~200 chases per cell.
+
 ## Design changes found by the experiments (vs the review PDF)
 
 1. Sightings must **condition** the particle belief (keep particles consistent with the camera and
@@ -161,6 +183,6 @@ junction by construction.
 
 ## Still to do
 
-SUMO + TraCI replication of the main plot with real traffic; MQTT edge→server messaging with
+Full-size SUMO replication (200 chases per cell, all coverages; pilot in section 9); MQTT edge→server messaging with
 loss/delay and replay (Exps 3, 4, 10); multiple suspects (Exp 6); dashboard + tabletop demo;
 Indian detector fine-tuning on own photos; your own city's map.

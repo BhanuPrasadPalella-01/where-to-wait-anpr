@@ -20,7 +20,7 @@ Mark an item `[x]` when it is done and add the date.
       (Python 3.12, CPU only, no model downloads); README badge.
 
 ## Experiments
-- [ ] **SUMO replication fix** — fix `planner/sumo_sim.py` (TraCI "End position on lane must be after
+- [x] (2026-10-21) **SUMO replication fix** — fix `planner/sumo_sim.py` (TraCI "End position on lane must be after
       start position" when setting a stop on very short edges / when the vehicle is already past the
       stop position); add a pilot run script; record results in `reports/RESULTS.md`.
 - [ ] **Messaging layer** — signed (HMAC), numbered sighting messages between edge and control room;
