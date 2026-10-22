@@ -39,8 +39,8 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            reconstruct.py route reconstruction between sightings (Yen's K paths, space-time feasibility)
            sumo_graph.py  planner graph from a SUMO network
            sumo_sim.py    SUMO/TraCI replication with real traffic (pilot: reports/RESULTS.md section 9)
-server/    control_room.py (case state, gate, belief, plan, officer approval, alerts), db.py (SQLite store),
-           app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
+server/    control_room.py (case state, gate, belief, plan, officer approval, alerts, late-sighting replay),
+           messages.py (signed, numbered edge messages), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
            hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py
@@ -49,7 +49,8 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            (the same checks on synthetic graphs, always run), test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
            camera heartbeat, edge reads; runs on the synthetic grid in synthetic.py, no city map needed),
            test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts),
-           test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO),
+           test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO), test_messages.py,
+           test_edge_inbox.py, test_replay.py (signing, duplicates, out-of-order replay),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -112,7 +113,9 @@ Control-room dashboard (live demo): `.venv/bin/python -m uvicorn server.app:app 
 http://localhost:8000, press **Start demo chase**. Sightings appear, the predicted area spreads, the
 officer approves each plan, units drive to their junctions; **Inject cloned plate** shows the
 feasibility gate flagging an impossible journey, **Camera offline** marks a camera blind. Real edge
-cameras post to `POST /api/sighting` (`{"camera": <junction>, "plate": "...", "score": 0.93}`).
+cameras post signed reads to `POST /api/edge/read` (see "Edge messaging" below); `POST /api/sighting`
+(`{"camera": <junction>, "plate": "...", "score": 0.93}`) is an unsigned manual entry, refused when
+`WTW_EDGE_KEY` is set.
 
 ## Live demo
 
@@ -131,6 +134,24 @@ dashboard's read log; only hotlist matches become sightings on the map. A `--rol
 cloned-plate check, and a camera whose stream stops for 5 s is marked blind. Reads made while the
 control room is down are queued on the node and replayed. Full script and tips: [`DEMO.md`](DEMO.md).
 
+### Edge messaging
+
+Every read a node sends is numbered and signed (`server/messages.py`): the node's random boot id, a
+sequence number, and an HMAC-SHA256 over the canonical JSON with a key shared by the nodes and the control
+room (`WTW_EDGE_KEY`, or `--key` on the node). The control room
+
+* drops a read with a missing or wrong signature (HTTP 401; the node logs it and moves on),
+* drops a read whose (camera, boot, seq) it already processed — a retry after a lost reply,
+* dates each sighting by its **capture** time on the node, not its arrival time, and
+* when a sighting arrives after one captured later (a queue flushed after an outage, a slow link), rolls
+  the belief back to a snapshot taken before that later sighting and replays all of them in capture
+  order. A verdict can change on replay (a read that looked fine may become an impossible journey once
+  the earlier one is known); changes are logged, stored, and the officer gets one new plan.
+
+While the control room is unreachable the node keeps up to 2,000 reads, dropping the oldest non-match
+first. Without a key everything still works, unsigned (fine for a tabletop demo, not for a network).
+Node clocks are assumed roughly in sync (NTP); a capture time in the future is clamped to "now".
+
 Perception: `scripts/prepare_data.py` downloads the public datasets; `scripts/read_plates.py <images>`
 runs detector + OCR end to end with the weights in `weights/final/`.
 
@@ -145,7 +166,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: graph-free Dijkstra/Yen and greedy-vs-exact tests; city-map tests skip when the map is missing.
 * Done: GitHub Actions CI running the unit tests on every push (CPU only, no downloads).
 * Done: SUMO replication runs without TraCI errors; 160-episode pilot in normal and peak traffic.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — signed messaging with replay, multiple suspects, your own city.
+* Done: signed, numbered edge messages; duplicates dropped; late sightings replayed by capture time.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — multiple suspects, your own city.
 
 ## Data and ethics
 

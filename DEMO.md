@@ -6,9 +6,11 @@ No simulated chase in live mode.
 
 ## 1. Start the control room
 ```bash
+export WTW_EDGE_KEY=$(openssl rand -hex 16)   # shared secret; use the same value on every node
 .venv/bin/python -m uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 Open http://localhost:8000 (others on the same Wi-Fi: http://<your-ip>:8000, `ipconfig getifaddr en0`).
+With `WTW_EDGE_KEY` set, only signed reads count; leave it unset for a quick unsigned tabletop run.
 
 ## 2. Start one node per camera (each in its own terminal)
 ```bash
@@ -23,6 +25,7 @@ Open http://localhost:8000 (others on the same Wi-Fi: http://<your-ip>:8000, `ip
 # a recorded clip instead of a live camera
 .venv/bin/python -m edge.camera_node --name cam-A --source clip.mp4 --loop
 ```
+Run the nodes in shells where `WTW_EDGE_KEY` holds the same value (or pass `--key`).
 `--role route` cameras sit on consecutive junctions ~45 s apart along one real road; `--role far` sits
 ~10 min away. macOS asks once for camera permission for the terminal.
 
@@ -37,9 +40,13 @@ Open http://localhost:8000 (others on the same Wi-Fi: http://<your-ip>:8000, `ip
 5. Clone: a second toy car with the **same plate** in front of cam-FAR a few seconds later → red flagged
    sighting: "impossible journey — possible clone or misread. Not used." Units are not diverted.
 6. Unplug / cover a phone's stream: after 5 s that camera turns OFFLINE (blind) on the map.
-7. Open `http://<your-ip>:8000/unit/Unit%201` on a phone: the patrol unit sees its assignment and the
+7. Stop the control room (Ctrl-C) for a few seconds while cars pass a camera, then start it again: the node
+   prints "server unreachable: LOCAL ALERT, queued", replays its queue when the server is back, and the
+   sightings land at the time they were captured. A read that arrives after a later one is replayed in
+   capture order ("arrived late … replayed" in the event log).
+8. Open `http://<your-ip>:8000/unit/Unit%201` on a phone: the patrol unit sees its assignment and the
    wanted car, and presses **Acknowledge**; the **Alerts** tab shows who has acknowledged.
-8. After the case, **Registry → History** redraws the stored sightings and reconstructed route from the
+9. After the case, **Registry → History** redraws the stored sightings and reconstructed route from the
    database.
 
 Tabletop time scale: 1 real second = 10 city seconds (shown on screen), because toy cars cross the table
