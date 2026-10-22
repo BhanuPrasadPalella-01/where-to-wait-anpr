@@ -18,6 +18,7 @@ import queue
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -26,9 +27,11 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from hotlist import Hotlist  # noqa: E402
 from indian_plate_format import correct  # noqa: E402
+from server.messages import KEY_ENV, Numberer, load_key, sign  # noqa: E402
 
 DET = ROOT / "weights" / "final" / "plate_detector_yolo26n.pt"
 OCR = ROOT / "weights" / "final" / "indian_plate_ocr.onnx"
@@ -36,11 +39,16 @@ OCR_CFG = ROOT / "weights" / "final" / "indian_plate_ocr_config.yaml"
 
 
 class Server:
-    """Small HTTP client; reads that cannot be delivered are queued and replayed (edge-only fallback)."""
+    """Small HTTP client; reads that cannot be delivered are queued and replayed (edge-only fallback).
 
-    def __init__(self, base: str):
+    Each read is numbered and signed once, when it is queued, so a retry is byte-for-byte the same
+    message and the control room can drop it as a duplicate (server/messages.py)."""
+
+    def __init__(self, base: str, key: bytes | None = None, max_backlog: int = 2000):
         self.base = base.rstrip("/")
+        self.key, self.numberer, self.max_backlog = key, Numberer(), max_backlog
         self.backlog: list[dict] = []
+        self.refused = 0  # reads the server will never take (bad signature, malformed): dropped, not retried
         self.frames: queue.Queue = queue.Queue(maxsize=2)
         threading.Thread(target=self._frame_pusher, daemon=True).start()
 
@@ -52,14 +60,24 @@ class Server:
             return json.loads(r.read() or b"{}")
 
     def send_read(self, read: dict) -> bool:
-        self.backlog.append(read)
-        try:
-            while self.backlog:
+        msg = self.numberer.stamp(read)
+        self.backlog.append(sign(msg, self.key) if self.key else msg)
+        if len(self.backlog) > self.max_backlog:  # long outage: forget the oldest non-match first
+            drop = next((i for i, m in enumerate(self.backlog) if not m.get("matched")), 0)
+            self.backlog.pop(drop)
+        while self.backlog:
+            try:
                 self.call("/api/edge/read", self.backlog[0])
-                self.backlog.pop(0)
-            return True
-        except Exception:
-            return False
+            except urllib.error.HTTPError as e:
+                if not 400 <= e.code < 500:
+                    return False
+                self.refused += 1  # retrying a refused message can never succeed and would block the queue
+                print(f"[edge] read #{self.backlog[0].get('seq')} refused by the control room "
+                      f"(HTTP {e.code}); check {KEY_ENV} matches on both sides", flush=True)
+            except Exception:
+                return False
+            self.backlog.pop(0)
+        return True
 
     def push_frame(self, name: str, jpg: bytes):
         try:
@@ -121,12 +139,16 @@ def main():
     ap.add_argument("--show", action="store_true", help="also open a local preview window")
     ap.add_argument("--max-fps", type=float, default=12)
     ap.add_argument("--device", default="auto", help="detector device: auto, mps, cuda:0 or cpu")
+    ap.add_argument("--key", default=None, help=f"shared HMAC key for signing reads (default: ${KEY_ENV})")
     a = ap.parse_args()
 
     from fast_plate_ocr import LicensePlateRecognizer
     from ultralytics import YOLO
 
-    srv = Server(a.server)
+    key = load_key(a.key)
+    if key is None:
+        print(f"[{a.name}] no {KEY_ENV} / --key: reads are sent unsigned", flush=True)
+    srv = Server(a.server, key)
     reg = srv.call("/api/edge/register", {"name": a.name, "role": a.role, "junction": a.junction})
     junction = reg["junction"]
     print(f"[{a.name}] registered at map junction {junction}", flush=True)
