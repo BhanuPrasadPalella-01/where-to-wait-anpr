@@ -21,6 +21,7 @@ from planner.roadgraph import INF, dijkstra
 from planner.simulate import (DISPATCH, MARGIN, N_PARTICLES, RECALL, STICKY, STICKY_WAITING, Unit, World)
 
 from .db import Database
+from .messages import Deduper, verify
 
 ACK_TIMEOUT = 30.0  # wall-clock seconds before an unacknowledged assignment is flagged to the officer
 
@@ -42,10 +43,13 @@ class Event:
 
 class ControlRoom:
     def __init__(self, coverage: float = 0.25, n_units: int = 4, seed: int = 7, world: World | None = None,
-                 db: Database | None = None):
+                 db: Database | None = None, edge_key: bytes | None = None):
         self.W = world or World()
         self.g = self.W.g
         self.db = db or Database(":memory:")
+        self.edge_key = edge_key  # shared HMAC key; when set, unsigned or altered edge reads are dropped
+        self.inbox = Deduper()    # (camera, boot, seq) already processed; survives reset like the cameras
+        self.clock_rate = 1.0     # simulated seconds per wall-clock second (the dashboard's speed setting)
         self.coverage, self.n_units = coverage, n_units
         self._registry, self._registry_t = [], 0.0
         self.reset(seed)
@@ -365,10 +369,22 @@ class ControlRoom:
         self.log("camera", f"Edge camera '{name}' online at junction {j} ({role}).")
         return {"junction": j, "lonlat": self.g.xy[j]}
 
-    def edge_read(self, r: dict, theta: float = 0.05) -> dict:
+    def edge_read(self, r: dict, theta: float = 0.05, now: float | None = None) -> dict:
+        """One plate read from an edge node (see server/messages.py for the signed, numbered format).
+
+        The sighting time is the capture time, mapped from the node's wall clock onto the simulated
+        clock, so a read that sat in the node's queue lands where it happened, not when it arrived."""
+        if self.edge_key is not None and not verify(r, self.edge_key):
+            self.log("flag", f"Edge read claiming to be from {r.get('name')!r} dropped: bad or missing signature.")
+            return {"ok": False, "error": "bad signature"}
         e = self.edges.get(r["name"])
         if e is None:
             return {"ok": False, "error": "unregistered camera"}
+        if r.get("seq") is not None and not self.inbox.add(r["name"], str(r.get("boot", "")), int(r["seq"])):
+            return {"ok": True, "duplicate": True}
+        now = time.time() if now is None else now
+        delay = max(0.0, now - r["captured_at"]) if r.get("captured_at") else 0.0
+        t = max(0.0, self.t - delay * self.clock_rate)
         e["reads"] += 1
         self.read_seq = getattr(self, "read_seq", 0) + 1
         plate = r["plate"]
@@ -381,7 +397,7 @@ class ControlRoom:
                 self.open_case(matched, vehicle=v)
         target = (self.case or {}).get("plate")
         hit = bool(matched and matched == target)
-        rec = {"rid": self.read_seq, "t": round(self.t, 1), "camera": r["name"], "junction": e["junction"],
+        rec = {"rid": self.read_seq, "t": round(t, 1), "camera": r["name"], "junction": e["junction"],
                "plate": plate, "conf": r.get("conf"), "score": r.get("score"), "hit": hit,
                "hotlist": bool(matched), "thumb": r.get("thumb")}
         self.reads.append(rec)
@@ -389,7 +405,7 @@ class ControlRoom:
         self.db.add_read(rec)
         if hit:
             e["matches"] += 1
-            s = self.add_sighting(e["junction"], None, plate, float(r.get("score", 1.0)), source=r["name"],
+            s = self.add_sighting(e["junction"], t, plate, float(r.get("score", 1.0)), source=r["name"],
                                   thumb=r.get("thumb"))
             rec["status"] = s["status"]
         elif matched:  # another registered vehicle: tell the stations, do not divert the active case

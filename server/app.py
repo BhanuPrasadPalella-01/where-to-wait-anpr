@@ -1,7 +1,8 @@
 """Dashboard server: FastAPI + WebSocket around the ControlRoom.
 
 Run:  .venv/bin/python -m uvicorn server.app:app --port 8000
-Edge cameras (step 2) post real sightings to POST /api/sighting.
+Edge cameras post signed, numbered plate reads to POST /api/edge/read (server/messages.py);
+POST /api/sighting is an unsigned manual entry, refused when WTW_EDGE_KEY is set.
 """
 from __future__ import annotations
 
@@ -12,15 +13,16 @@ import time
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .control_room import ControlRoom
 from .db import Database
+from .messages import KEY_ENV, load_key
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="Where to Wait — control room")
 db = Database()  # data/control_room.db: registry, sightings, reads, routes, alerts, audit log
-room = ControlRoom(db=db)
+room = ControlRoom(db=db, edge_key=load_key())  # set WTW_EDGE_KEY to require signed edge reads
 state = {"speed": 5.0, "running": False, "show_truth": True}
 clients: set[WebSocket] = set()
 
@@ -64,6 +66,9 @@ class EdgeRead(BaseModel):
     score: float = 0.0
     thumb: str | None = None
     captured_at: float | None = None
+    boot: str | None = None   # signed, numbered messages: see server/messages.py
+    seq: int | None = None
+    sig: str | None = None
 
 
 frames: dict[str, bytes] = {}
@@ -186,8 +191,15 @@ def edge_register(r: EdgeRegister):
 
 
 @app.post("/api/edge/read")
-def edge_read(r: EdgeRead):
-    return room.edge_read(r.dict() if not hasattr(r, "model_dump") else r.model_dump())
+async def edge_read(request: Request):
+    # the signature covers the body exactly as the node sent it, so verify the raw JSON, not the model
+    body = await request.json()
+    try:
+        EdgeRead(**body)
+    except (TypeError, ValidationError) as e:
+        return JSONResponse({"error": str(e)}, status_code=422)
+    res = room.edge_read(body)
+    return JSONResponse(res, status_code=401) if res.get("error") == "bad signature" else res
 
 
 @app.post("/api/edge/frame/{name}")
@@ -268,6 +280,8 @@ def camera_random_offline():
 
 @app.post("/api/sighting")
 def sighting(s: SightingIn):
+    if room.edge_key is not None:  # this manual endpoint is unsigned; with a key only edge reads count
+        return JSONResponse({"error": f"{KEY_ENV} is set: send signed reads to /api/edge/read"}, status_code=403)
     return room.add_sighting(s.camera, s.t, s.plate, s.score, source="edge camera")
 
 
@@ -299,6 +313,7 @@ async def clock():
             await asyncio.sleep(tick)
             room.check_edges(time.time())
             room.check_acks(time.time())
+            room.clock_rate = state["speed"] if state["running"] and room.case else 0.0
             if state["running"] and room.case:
                 room.step(tick * state["speed"])
             if clients:
