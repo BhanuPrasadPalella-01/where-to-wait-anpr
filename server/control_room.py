@@ -35,7 +35,7 @@ class Camera:
 @dataclass
 class Event:
     t: float
-    kind: str      # info | sighting | flag | plan | approve | reject | intercept | escape | camera | alert
+    kind: str      # info | sighting | flag | replay | plan | approve | reject | intercept | escape | camera | alert
     text: str
     data: dict = field(default_factory=dict)
 
@@ -63,6 +63,7 @@ class ControlRoom:
         self.last_ok: Sighting | None = None
         self.last_ok_sid: int | None = None  # database id of the last accepted sighting
         self.sightings: list[dict] = []
+        self.timeline: list[dict] = []       # judged sightings in capture order, with the state before each
         self.track: list[dict] = []          # reconstructed route segments between accepted sightings
         self.pending_plan: list[tuple[str, int]] | None = None
         self.unit_alert: dict[str, dict] = {}  # unit -> {"id", "sent_wall", "acked"}
@@ -135,6 +136,7 @@ class ControlRoom:
         self.belief = None
         self.last_ok = None
         self.last_ok_sid = None
+        self.timeline = []
         if incident is not None:
             self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self.seed + 7)
             self.belief.reseed(incident, self.t)
@@ -151,50 +153,91 @@ class ControlRoom:
     # ------------------------------------------------------------------ sightings
     def add_sighting(self, camera: int, t: float | None = None, plate: str | None = None,
                      score: float = 1.0, true: bool = True, source: str = "camera", thumb: str | None = None) -> dict:
+        """Judge a sighting by its capture time t. One that arrives after a later sighting was already
+        judged (slow link, edge queue replayed) rolls the belief back to before that sighting and
+        replays everything from there in capture-time order, so arrival order never changes the result."""
         t = self.t if t is None else t
         self.seq += 1
         s = Sighting(camera, t, score, self.seq, true)
         rec = {"id": self.seq, "camera": camera, "t": round(t, 1), "plate": plate or (self.case or {}).get("plate"),
                "score": round(score, 3), "status": "accepted", "source": source,
                "lonlat": self.g.xy[camera], "thumb": thumb}
-        prev, prev_sid = self.last_ok, self.last_ok_sid
-        accepted = False
+        vid = ((self.case or {}).get("vehicle") or {}).get("id")
         if self.case is None:
             rec["status"] = "no active case"
-        elif self.last_ok is None:  # live case: the first camera read starts the belief
+        elif self.case["incident"] is not None and t < self.case["reported_at"]:
+            rec["status"] = "stale (before the incident report)"
+        if rec["status"] != "accepted":
+            rec["db_id"] = self.db.add_sighting(rec, vid)
+            self.sightings.append(rec)
+            return rec
+
+        later = self._rollback(t) if self.timeline and t < self.timeline[-1]["s"].t else []
+        accepted = self._judge(s, rec, vid)
+        if accepted:
+            self.db.add_alert("all stations", "sighting",
+                              f"Wanted {self.describe()} sighted at junction {camera} by {source}.",
+                              vid, camera, self.g.xy[camera])
+        for e in later:
+            self._judge(e["s"], e["rec"], vid, replay=True)
+        if later:
+            self.log("replay", f"Sighting #{self.seq} arrived late (captured t = {t:.0f} s): belief rolled back "
+                               f"and {len(later)} later sighting(s) replayed in capture order.", id=self.seq)
+        self.sightings.append(rec)
+        if accepted or later:
+            self.propose_plan(f"{'late ' if later else ''}sighting #{self.seq}")
+        return rec
+
+    def _judge(self, s: Sighting, rec: dict, vid: int | None, replay: bool = False) -> bool:
+        """Gate one sighting against the last accepted one and update the belief; store the verdict."""
+        before = (self.belief.snapshot() if self.belief else None, self.last_ok, self.last_ok_sid)
+        prev, prev_sid = self.last_ok, self.last_ok_sid
+        old = rec["status"]
+        rec.pop("why", None)
+        what = f"Sighting #{s.seq}: {rec['plate']} read by {rec['source']} at junction {s.camera} (score {s.score:.2f})"
+        if self.last_ok is None:  # live case: the first camera read starts the belief
             self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self.seed + 7)
-            self.belief.reseed(camera, t)
-            self.last_ok = s
-            accepted = True
-            self.log("sighting", f"Sighting #{self.seq}: {rec['plate']} read by {source} at junction {camera} "
-                                 f"(score {score:.2f}) — first sighting, belief started.", id=self.seq)
-        elif t < self.last_ok.t:
-            rec["status"] = "stale (older than current belief)"
+            self.belief.reseed(s.camera, s.t)
+            self.last_ok, accepted = s, True
+            rec["status"] = "accepted"
+            kind, text = "sighting", f"{what} — first sighting, belief started."
         elif not self.W.gate.feasible(self.last_ok, s):
-            need = self.W.gate.tau_min(self.last_ok.camera, camera)
-            rec["status"] = "flagged: impossible journey"
+            need = self.W.gate.tau_min(self.last_ok.camera, s.camera)
+            rec["status"], accepted = "flagged: impossible journey", False
             rec["why"] = (f"needs ≥ {0.7 * need:.0f} s from camera {self.last_ok.camera}, "
-                          f"only {t - self.last_ok.t:.0f} s passed — possible clone or misread")
-            self.log("flag", f"Sighting #{self.seq} at camera {camera} FLAGGED: {rec['why']}. Not used.", id=self.seq)
+                          f"only {s.t - self.last_ok.t:.0f} s passed — possible clone or misread")
+            kind, text = "flag", f"Sighting #{s.seq} at camera {s.camera} FLAGGED: {rec['why']}. Not used."
         else:
             self.last_ok = s
             self.belief.condition(s)
-            accepted = True
-            self.log("sighting", f"Sighting #{self.seq}: {rec['plate']} read by {source} at junction {camera} "
-                                 f"(score {score:.2f}) — accepted, belief updated.", id=self.seq)
-
-        vid = (self.case or {}).get("vehicle", {}) or {}
-        rec["db_id"] = self.db.add_sighting(rec, vid.get("id"))
+            rec["status"], accepted = "accepted", True
+            kind, text = "sighting", f"{what} — accepted, belief updated."
+        if not replay:
+            rec["db_id"] = self.db.add_sighting(rec, vid)
+            self.log(kind, text, id=s.seq)
+        else:
+            self.db.delete_routes_to(rec["db_id"])
+            if rec["status"] != old:
+                self.db.set_sighting_status(rec["db_id"], rec["status"], rec.get("why"))
+                self.log(kind, f"Replay: {text} (was {old}).", id=s.seq)
         if accepted:
             self.last_ok_sid = rec["db_id"]
             if prev is not None:
-                self._reconstruct(prev, s, prev_sid, rec["db_id"], vid.get("id"))
-            self.db.add_alert("all stations", "sighting",
-                              f"Wanted {self.describe()} sighted at junction {camera} by {source}.",
-                              vid.get("id"), camera, self.g.xy[camera])
-            self.propose_plan(f"sighting #{self.seq}")
-        self.sightings.append(rec)
-        return rec
+                self._reconstruct(prev, s, prev_sid, rec["db_id"], vid)
+        self.timeline.append({"s": s, "rec": rec, "before": before})
+        return accepted
+
+    def _rollback(self, t: float) -> list[dict]:
+        """Undo every sighting captured after t; returns them (in capture order) for replay."""
+        i = next(k for k, e in enumerate(self.timeline) if e["s"].t > t)
+        later, self.timeline = self.timeline[i:], self.timeline[:i]
+        snap, self.last_ok, self.last_ok_sid = later[0]["before"]
+        if snap is None:
+            self.belief = None
+        else:
+            self.belief.restore(snap)
+        self.track = [seg for seg in self.track if seg["t1"] <= t]
+        return later
 
     def _reconstruct(self, a: Sighting, b: Sighting, a_sid, b_sid, vehicle_id):
         """Rebuild the road the car most likely took between two accepted sightings (Yen's K paths)."""

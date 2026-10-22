@@ -80,9 +80,18 @@ def test_gate_accepts_the_same_far_camera_given_enough_time(room):
     assert room.add_sighting(FAR, 600.0)["status"] == "accepted"
 
 
-def test_sighting_older_than_belief_is_stale(room):
+def test_sighting_older_than_belief_is_replayed_in_capture_order(room):
     live_case(room)
     room.add_sighting(B, 100.0)
+    rec = room.add_sighting(A, 50.0)  # arrives late; replay judges A then B
+    assert rec["status"] == "accepted"
+    assert room.last_ok.camera == B
+    assert [e["s"].camera for e in room.timeline] == [A, B]
+
+
+def test_sighting_before_the_incident_report_is_stale(room):
+    room.t = 100.0
+    room.open_case("TS09EK4417", incident=B)
     rec = room.add_sighting(A, 50.0)
     assert rec["status"].startswith("stale")
     assert room.last_ok.camera == B

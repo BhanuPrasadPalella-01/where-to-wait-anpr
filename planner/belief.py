@@ -107,6 +107,17 @@ class ParticleBelief:
         else:
             self.w = [x / s for x in self.w]
 
+    def snapshot(self) -> tuple:
+        """Everything a later update changes, so a late sighting can roll the belief back and replay.
+        Routes are never mutated in place (reseed builds new lists), so shallow copies are enough."""
+        return (list(self.routes), list(self.meta), list(self.w), self.t_seed, self.checked_upto,
+                self.rng.getstate())
+
+    def restore(self, snap: tuple):
+        routes, meta, w, self.t_seed, self.checked_upto, rng = snap
+        self.routes, self.meta, self.w = list(routes), list(meta), list(w)
+        self.rng.setstate(rng)
+
     def future(self, t_now: float):
         """For the planner: per particle, the not-yet-reached part of its route."""
         return [[(v, t) for v, t in r if t >= t_now] for r in self.routes]

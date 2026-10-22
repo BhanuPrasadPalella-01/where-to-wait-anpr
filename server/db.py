@@ -143,6 +143,10 @@ class Database:
              rec.get("status"), rec.get("why"), rec.get("source"), rec.get("thumb")))
         return cur.lastrowid
 
+    def set_sighting_status(self, sid: int, status: str, why: str | None = None) -> None:
+        """A late sighting replayed before this one can change its verdict (accepted <-> flagged)."""
+        self._exec("UPDATE sightings SET status = ?, why = ? WHERE id = ?", (status, why, sid))
+
     def sightings(self, vehicle_id: int) -> list[dict]:
         return self._rows("SELECT id, plate, junction, lon, lat, t_sim, wall_time, score, status, why, source,"
                           " thumb IS NOT NULL AS has_thumb FROM sightings WHERE vehicle_id = ? ORDER BY id",
@@ -169,6 +173,10 @@ class Database:
             self._exec("INSERT INTO routes (vehicle_id, from_sighting, to_sighting, rank, share, travel_s, path)"
                        " VALUES (?,?,?,?,?,?,?)",
                        (vehicle_id, from_sid, to_sid, p["rank"], p["share"], p["travel_s"], json.dumps(p["lonlat"])))
+
+    def delete_routes_to(self, to_sid: int) -> None:
+        """Drop the reconstructed routes ending at a sighting before they are rebuilt after a replay."""
+        self._exec("DELETE FROM routes WHERE to_sighting = ?", (to_sid,))
 
     def routes(self, vehicle_id: int) -> list[dict]:
         rows = self._rows("SELECT * FROM routes WHERE vehicle_id = ? ORDER BY id", (vehicle_id,))
