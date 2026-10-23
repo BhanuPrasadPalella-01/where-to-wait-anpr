@@ -39,7 +39,8 @@ from scipy.optimize import linear_sum_assignment
 from .belief import FeasibilityGate, ParticleBelief, Sighting
 from .fugitive import BACKSTREET, PLANNER_MODELS, RouteSampler, pick_exits
 from .plan import coverage_sets, greedy_plan, unit_etas
-from .roadgraph import INF, RoadGraph, dijkstra, path_to
+from .roadgraph import (DEFAULT_RADIUS_M, GRAPH_ENV, INF, RoadGraph, default_graph_path, dijkstra, ensure_graph,
+                        parse_center, path_to)
 
 ROOT = Path(__file__).resolve().parents[1]
 METHODS = ("proposed", "timer", "no_neg", "no_gate", "b2_once", "b1_static", "b0_chase")
@@ -104,9 +105,12 @@ class Unit:
 class World:
     """Everything that depends only on the map: built once per worker process."""
 
-    def __init__(self, graph_file: str = "city_graph.json", g: RoadGraph | None = None):
-        # g: an in-memory graph (tests use a small synthetic grid instead of the downloaded city)
-        self.g = g if g is not None else RoadGraph.load(ROOT / "data" / graph_file)
+    def __init__(self, graph_file: str | None = None, g: RoadGraph | None = None):
+        # g: an in-memory graph (tests use a small synthetic grid instead of the downloaded city);
+        # graph_file: a file in data/; neither: $WTW_GRAPH, else data/city_graph.json
+        if g is None:
+            g = RoadGraph.load(ROOT / "data" / graph_file if graph_file else default_graph_path())
+        self.g = g
         self.exits = pick_exits(self.g)
         self.sampler = RouteSampler(self.g, self.exits)
         self.gate = FeasibilityGate(self.g)
@@ -256,6 +260,26 @@ def run_episode(seed: int, coverage: float, method: str, k: int = 4, held_out: b
             "left_early": left_early, "moves": moves}
 
 
+def add_map_args(ap):
+    """--graph / --center / --radius: run the simulator on another map than data/city_graph.json."""
+    ap.add_argument("--graph", type=Path, help="road graph file (default $WTW_GRAPH or data/city_graph.json)")
+    ap.add_argument("--center", type=parse_center, help="LAT,LON of a study area; downloaded once into data/")
+    ap.add_argument("--radius", type=int, default=DEFAULT_RADIUS_M, help="metres around --center")
+
+
+def use_map(a) -> Path:
+    """Apply the map options. Set through the environment so the worker processes load the same map."""
+    if a.center is not None:
+        path = ensure_graph(a.center, a.radius)
+    else:
+        path = a.graph or default_graph_path()
+    if not path.exists():
+        raise SystemExit(f"{path} not found; build it with python -m planner.roadgraph (--center LAT,LON --radius M)")
+    os.environ[GRAPH_ENV] = str(path.resolve())
+    print(f"map: {path}", file=sys.stderr)
+    return path
+
+
 def _job(args):
     return run_episode(*args)
 
@@ -287,7 +311,9 @@ if __name__ == "__main__":
     ap.add_argument("--clone", action="store_true")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--seed0", type=int, default=0, help="tuning used seeds 0-99; final results use 10000+")
+    add_map_args(ap)
     a = ap.parse_args()
+    use_map(a)
     rows = sweep(a.name, [float(c) for c in a.coverages.split(",")], a.methods.split(","), a.runs, a.k, a.clone,
                  a.workers, a.seed0)
     import pandas as pd

@@ -159,7 +159,7 @@ if __name__ == "__main__":
     import sys
     from multiprocessing import Pool
 
-    from .simulate import ROOT
+    from .simulate import ROOT, add_map_args, use_map
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="multi_pilot")
     ap.add_argument("--coverage", type=float, default=0.3)
@@ -168,7 +168,9 @@ if __name__ == "__main__":
     ap.add_argument("--k", type=int, default=4)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--seed0", type=int, default=40000)
+    add_map_args(ap)
     a = ap.parse_args()
+    use_map(a)
     jobs = [(s, a.coverage, m, a.k, s % 2 == 1) for s in range(a.seed0, a.seed0 + a.runs) for m in a.methods.split(",")]
     t0 = time.time()
     with Pool(a.workers) as pool:
