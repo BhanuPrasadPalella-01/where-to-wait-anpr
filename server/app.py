@@ -36,6 +36,8 @@ class SightingIn(BaseModel):
 
 class CaseIn(BaseModel):
     plate: str
+    severity: float | None = None
+    add: bool = False   # keep the cases already open (several suspects share the units)
 
 
 class VehicleIn(BaseModel):
@@ -95,11 +97,30 @@ def demo_start(held_out: bool = False, seed: int | None = None):
 @app.post("/api/case")
 def open_live_case(c: CaseIn):
     """Live mode: the officer enters the wanted plate; only real camera reads drive the map."""
-    room.reset(room.seed)
-    room.open_case(c.plate)
+    if not (c.add and room.cases):
+        room.reset(room.seed)
+    room.open_case(c.plate, severity=c.severity, add=c.add)
     state["running"] = True
     state["speed"] = 10.0  # tabletop scale: 1 real second = 10 city seconds (toy car vs real junction distances)
     return {"ok": True, "plate": room.case["plate"]}
+
+
+@app.post("/api/cases/{plate}/severity")
+def case_severity(plate: str, value: float):
+    """Officer-set weight of one case in the shared plan (1 = minor ... 5 = violent)."""
+    if not 0 < value <= 10:
+        return JSONResponse({"error": "severity must be in (0, 10]"}, status_code=400)
+    return {"ok": room.set_severity(plate, value)}
+
+
+@app.post("/api/cases/{plate}/focus")
+def case_focus(plate: str):
+    return {"ok": room.focus(plate)}
+
+
+@app.post("/api/cases/{plate}/close")
+def case_close(plate: str):
+    return {"ok": room.close_case(plate)}
 
 
 @app.get("/api/hotlist")
@@ -123,13 +144,15 @@ def register_vehicle(v: VehicleIn):
 
 
 @app.post("/api/vehicles/{vid}/track")
-def track_vehicle(vid: int):
-    """Open a live case for a registered vehicle: the cameras' reads now drive the map for it."""
+def track_vehicle(vid: int, add: bool = False):
+    """Open a live case for a registered vehicle: the cameras' reads now drive the map for it.
+    add=true tracks it alongside the cases already open."""
     v = db.vehicle(vid)
     if not v or v["status"] != "active":
         return JSONResponse({"error": "no such active vehicle"}, status_code=404)
-    room.reset(room.seed)
-    room.open_case(v["plate"], vehicle=v)
+    if not (add and room.cases):
+        room.reset(room.seed)
+    room.open_case(v["plate"], vehicle=v, add=add)
     state["running"] = True
     state["speed"] = 10.0
     return {"ok": True, "plate": v["plate"]}

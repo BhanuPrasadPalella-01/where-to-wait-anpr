@@ -113,6 +113,7 @@
     <div class="row">
       <input type="text" id="liveplate" placeholder="WANTED PLATE" maxlength="12">
       <button class="primary" id="live">● Open live case</button>
+      <button id="addcase" title="Track this plate alongside the open case(s); units are shared by severity">＋ Add case</button>
     </div>
     <div class="sub" id="livehint" style="margin-top:6px">Live mode: only real cameras (edge nodes) drive the map.</div>
   </section>
@@ -137,6 +138,7 @@
   <div class="pane on" id="pane-case">
   <section>
     <p id="banner"></p>
+    <div id="cases"></div>
     <div id="plan">
       <b>Proposed plan — officer approval needed</b>
       <ul id="planlist"></ul>
@@ -155,7 +157,7 @@
     </div>
     <div class="legend">
       <div><span class="dot" style="background:#ff5c5c"></span>true suspect (demo)</div>
-      <div><span class="dot" style="background:#f5b942"></span>predicted position</div>
+      <div><span class="dot" style="background:#f5b942"></span>predicted position (one colour per case)</div>
       <div><span class="dot" style="background:#4c9aff"></span>accepted sighting</div>
       <div><span class="dot" style="background:#ff5c5c;border-radius:2px"></span>flagged sighting</div>
       <div><span class="dot" style="background:#ff8a3d;border-radius:2px"></span>reconstructed route</div>
@@ -242,7 +244,7 @@ document.getElementById('regform').onsubmit = async e => {
   document.getElementById('regerr').textContent = r.ok ? '' : (d.error || 'could not register');
   if (r.ok) { e.target.reset(); regKey = ''; }
 };
-window.trackVehicle = id => { fitted = false; layers.history.clearLayers(); post(`/api/vehicles/${id}/track`); };
+window.trackVehicle = (id, add) => { if (!add) fitted = false; layers.history.clearLayers(); post(`/api/vehicles/${id}/track${add ? '?add=true' : ''}`); };
 window.closeVehicle = id => { if (confirm('Remove this vehicle from the hotlist?')) post(`/api/vehicles/${id}/close`).then(() => regKey = ''); };
 window.showHistory = async id => {
   const d = await (await fetch(`/api/vehicles/${id}/history`)).json();
@@ -260,12 +262,23 @@ let feedKey = '';
 let fitted = false, camKey = '';
 const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                      body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+const CASE_COLOURS = ['#f5b942', '#4cd3c2', '#ff7ab6', '#9be15d', '#c49bff'];
+const caseColour = i => CASE_COLOURS[i % CASE_COLOURS.length];
+let casesKey = '';
+window.focusCase = p => post(`/api/cases/${p}/focus`);
+window.closeCase = p => { if (confirm(`Stop tracking ${p}? Its units become free for the other cases.`)) post(`/api/cases/${p}/close`); };
+window.caseSeverity = (p, v) => post(`/api/cases/${p}/severity?value=${v}`);
 const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 document.getElementById('live').onclick = () => {
   const p = document.getElementById('liveplate').value.trim();
   if (!p) { document.getElementById('liveplate').focus(); return; }
   fitted = false; post('/api/case', { plate: p });
+};
+document.getElementById('addcase').onclick = () => {
+  const p = document.getElementById('liveplate').value.trim();
+  if (!p) { document.getElementById('liveplate').focus(); return; }
+  post('/api/case', { plate: p, add: true });
 };
 document.getElementById('start').onclick = () => { fitted = false; post('/api/demo/start'); };
 document.getElementById('pause').onclick = () => post('/api/demo/pause');
@@ -328,8 +341,21 @@ function render(s) {
       .bindTooltip(`camera ${c.node}${c.live ? '' : ' — OFFLINE'}`).addTo(layers.cams);
   }
   layers.particles.clearLayers();
-  for (const [x, y, w] of s.particles) L.circleMarker([y, x], { radius: 3 + 9 * w, stroke: false,
-    fillColor: '#f5b942', fillOpacity: 0.15 + 0.6 * w }).addTo(layers.particles);
+  for (const [x, y, w, ci] of s.particles) L.circleMarker([y, x], { radius: 3 + 9 * w, stroke: false,
+    fillColor: caseColour(ci || 0), fillOpacity: 0.15 + 0.6 * w }).addTo(layers.particles);
+
+  // several open cases: severity, predicted catch and locked units per case
+  const cases = s.cases || [];
+  const ck = JSON.stringify(cases.map(c => [c.plate, c.severity, c.focus, c.prob, c.units]));
+  if (ck !== casesKey) {
+    casesKey = ck;
+    document.getElementById('cases').innerHTML = cases.length < 2 ? '' : cases.map(c => `<div class="veh">
+      <span class="dot" style="background:${caseColour(c.index)}"></span> <b>${c.plate}</b>${c.focus ? ' <span class="ok">● in focus</span>' : ''}
+      <div class="sub">catch ${Math.round(100 * c.prob)}% · ${c.units.length ? c.units.join(', ') : 'no units yet'}${c.seen ? '' : ' · not seen yet'}</div>
+      <div class="row"><label>severity <select onchange="caseSeverity('${c.plate}', this.value)">${[5, 4, 3, 2, 1].map(v =>
+        `<option value="${v}"${v === c.severity ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        ${c.focus ? '' : `<button onclick="focusCase('${c.plate}')">Focus</button>`}<button onclick="closeCase('${c.plate}')">Close</button></div></div>`).join('');
+  }
 
   layers.sightings.clearLayers();
   for (const x of s.sightings) {
@@ -349,14 +375,14 @@ function render(s) {
     if (u.target_lonlat && u.state === 'waiting')
       L.circleMarker(ll(u.target_lonlat), { radius: 14, color: '#3fb950', weight: 2, fill: false }).addTo(layers.paths);
     L.marker(ll(u.lonlat), { icon: L.divIcon({ className: 'unit-icon ' + u.state, html: u.id.replace('Unit ', 'U'),
-      iconSize: [26, 20] }) }).bindTooltip(`${u.id}: ${u.state}${u.target != null ? ' → junction ' + u.target : ''}`)
+      iconSize: [26, 20] }) }).bindTooltip(`${u.id}: ${u.state}${u.target != null ? ' → junction ' + u.target : ''}${u.case ? ' · for ' + u.case : ''}`)
       .addTo(layers.units);
   }
   layers.plan.clearLayers();
   const pl = document.getElementById('plan'), list = document.getElementById('planlist');
   if (s.pending_plan.length) {
     pl.classList.add('on');
-    list.innerHTML = s.pending_plan.map(p => `<li>${p.unit} → junction ${p.node}</li>`).join('');
+    list.innerHTML = s.pending_plan.map(p => `<li>${p.unit} → junction ${p.node}${cases.length > 1 && p.case ? ' · for ' + p.case : ''}</li>`).join('');
     for (const p of s.pending_plan) L.polyline([ll(p.from), ll(p.to)], { color: '#3fb950', weight: 2, dashArray: '6 6' })
       .addTo(layers.plan);
   } else pl.classList.remove('on');
@@ -385,14 +411,15 @@ function render(s) {
   }
 
   // hotlist registry
-  const rk = (s.registry || []).map(v => v.id + v.status).join(',') + '|' + (s.case ? s.case.plate : '');
+  const open = new Set(cases.map(c => c.plate));
+  const rk = (s.registry || []).map(v => v.id + v.status).join(',') + '|' + [...open].join(',');
   if (rk !== regKey) {
     regKey = rk;
     document.getElementById('registry').innerHTML = (s.registry || []).map(v => `<div class="veh">
-      <span class="sev">severity ${v.severity}/5</span><b>${v.plate}</b>${s.case && s.case.plate === v.plate ? ' <span class="ok">● tracking</span>' : ''}
+      <span class="sev">severity ${v.severity}/5</span><b>${v.plate}</b>${open.has(v.plate) ? ' <span class="ok">● tracking</span>' : ''}
       <div class="sub">${[v.colour, v.make_model || v.vehicle_type].filter(Boolean).join(' ')} · case ${v.case_no} · ${v.offence}</div>
       <div class="sub">by ${v.officer} · expires ${new Date(v.expires_at * 1000).toLocaleDateString()}</div>
-      <div class="row"><button onclick="trackVehicle(${v.id})">● Track live</button>
+      <div class="row"><button onclick="trackVehicle(${v.id})">● Track live</button>${open.size && !open.has(v.plate) ? `<button onclick="trackVehicle(${v.id}, true)">＋ Track alongside</button>` : ''}
         <button onclick="showHistory(${v.id})">History</button><button onclick="closeVehicle(${v.id})">Remove</button></div></div>`).join('')
       || 'No registered vehicles.';
   }
