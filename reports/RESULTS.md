@@ -171,6 +171,35 @@ knows only free-flow times; SUMO adds signals, queues and congestion. Run with
 * 20 chases per cell gives wide intervals (Proposed normal: 18–57%), so this is a pilot, not a
   result: the gap to B2 is not significant yet. The full replication needs ~200 chases per cell.
 
+## 10. Two suspects at once (30% cameras, 4 units, 200 paired scenarios, seeds 40,000+)
+
+Two crimes 120 s apart at different central junctions; one suspect is severe (severity 3), the other
+minor (1), drawn per seed. Each case has its own belief and gate; one plan covers both
+(`planner/multi_sim.py`). Run with `python -m planner.multi_sim --name multi_suspect --runs 200`
+(odd seeds use the held-out back-street driver); table from `scripts/multi_suspect_table.py`, rows in
+`reports/multi_suspect.jsonl`. A *pull* is a unit re-sent from one suspect to the other while still
+useful there; a *hand-off* is a unit released by its case (it no longer covers 5% of that belief) and
+re-used for the other.
+
+| Method | Severe caught | Minor caught | Severity-weighted catch | Pulls / ep | Hand-offs / ep | Plan ms |
+|---|---|---|---|---|---|---|
+| **Severity-weighted, useful locks** | 44.5% | 37.5% | 0.427 | 0.00 | 2.51 | 202 |
+| Equal weights, useful locks | 47.0% | 39.5% | 0.451 | 0.00 | 2.98 | 202 |
+| Severity-weighted, hard locks | 34.0% | 32.0% | 0.335 | 0.00 | 0.00 | 189 |
+| Severity-weighted, no lock | 45.5% | 42.0% | 0.446 | 1.20 | 2.08 | 218 |
+| Units split per case | 34.0% | 31.5% | 0.334 | 0.00 | 0.00 | 190 |
+
+* **Locks must release.** Keeping a unit on its case until the case ends (hard locks) or splitting the
+  fleet up front both lose about 10 points on the severe suspect (25 wins / 4 losses and 30 / 9 paired,
+  McNemar p = 0.0001 and 0.001). Releasing a unit once it covers < 5% of its suspect's belief keeps the
+  "never pulled while useful" rule (0 pulls) at no measurable cost against no locking at all (9 / 11,
+  p = 0.82), which pulls a unit 1.2 times per episode.
+* **Severity weights did not help here.** Equal weights caught the severe suspect slightly more often
+  (3 / 8, p = 0.23, not significant). With 4 units and two suspects far apart, the plans rarely compete
+  for the same unit, so the weight seldom changes a decision. The weight is kept because the officer
+  sets it and it costs nothing; a scenario with fewer units or closer crimes is needed to test it.
+* Planning two cases at once costs ~200 ms per plan, the same order as one case.
+
 ## Design changes found by the experiments (vs the review PDF)
 
 1. Sightings must **condition** the particle belief (keep particles consistent with the camera and
@@ -183,6 +212,6 @@ knows only free-flow times; SUMO adds signals, queues and congestion. Run with
 
 ## Still to do
 
-Full-size SUMO replication (200 chases per cell, all coverages; pilot in section 9); MQTT edge→server messaging with
-loss/delay and replay (Exps 3, 4, 10); multiple suspects (Exp 6); dashboard + tabletop demo;
+Full-size SUMO replication (200 chases per cell, all coverages; pilot in section 9); severity weights under unit
+scarcity (section 10); dashboard + tabletop demo;
 Indian detector fine-tuning on own photos; your own city's map.
