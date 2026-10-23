@@ -1,8 +1,14 @@
-"""Control-room state for the dashboard: one active case, cameras, units, belief and plan.
+"""Control-room state for the dashboard: active cases, cameras, units, beliefs and plan.
 
 Sightings come from the demo chase (simulated) or from real edge cameras via POST /api/sighting.
 Every accepted sighting updates the belief and produces a *proposed* plan; units only move after
 the officer approves it (PDF Phase 10 step 14). Rejected or flagged sightings never move units.
+
+Several cases can be open at once, each with its own belief, gate state and track and an
+officer-set severity. One plan covers them all (severity-weighted, planner/plan.py merge_cases);
+a unit sent for one case stays locked to it while it still helps that case (useful_locks) and is
+released when the case is closed or its junction no longer covers the suspect's likely routes. `case`, `belief`, `last_ok`,
+`timeline` and `track` refer to the case in focus (the one the dashboard shows in detail).
 
 Persistent records (registered vehicles, sightings, plate reads, reconstructed routes, alerts and the
 audit log) live in the SQLite store in server/db.py; an in-memory store is used when none is given.
@@ -11,11 +17,12 @@ from __future__ import annotations
 
 import random
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from planner.belief import ParticleBelief, Sighting
 from planner.fugitive import BACKSTREET, PLANNER_MODELS
-from planner.plan import coverage_sets, greedy_plan, unit_etas
+from planner.plan import coverage_sets, greedy_plan, merge_cases, serving_case, unit_etas, useful_locks
 from planner.reconstruct import reconstruct
 from planner.roadgraph import INF, dijkstra
 from planner.simulate import (DISPATCH, MARGIN, N_PARTICLES, RECALL, STICKY, STICKY_WAITING, Unit, World)
@@ -24,6 +31,7 @@ from .db import Database
 from .messages import Deduper, verify
 
 ACK_TIMEOUT = 30.0  # wall-clock seconds before an unacknowledged assignment is flagged to the officer
+DEFAULT_SEVERITY = 3  # a typed plate that is not on the registry
 
 
 @dataclass
@@ -41,7 +49,36 @@ class Event:
     data: dict = field(default_factory=dict)
 
 
+@dataclass
+class CaseTrack:
+    """Everything the control room keeps per wanted vehicle."""
+    info: dict           # {"plate", "incident", "reported_at", "live", "vehicle", "severity"}
+    idx: int = 0         # order the case was opened in (seeds its belief)
+    belief: ParticleBelief | None = None
+    last_ok: Sighting | None = None
+    last_ok_sid: int | None = None   # database id of the last accepted sighting
+    timeline: list = field(default_factory=list)  # judged sightings in capture order, with the state before each
+    track: list = field(default_factory=list)     # reconstructed route segments between accepted sightings
+
+
+def _focus_attr(name: str, empty=None):
+    """Property that reads/writes one field of the case in focus (empty when no case is open)."""
+    def get(self):
+        return getattr(self.cur, name) if self.cur else (empty() if callable(empty) else empty)
+
+    def set_(self, value):
+        setattr(self.cur, name, value)
+    return property(get, set_)
+
+
 class ControlRoom:
+    case = property(lambda self: self.cur.info if self.cur else None)
+    belief = _focus_attr("belief")
+    last_ok = _focus_attr("last_ok")
+    last_ok_sid = _focus_attr("last_ok_sid")
+    timeline = _focus_attr("timeline", list)
+    track = _focus_attr("track", list)
+
     def __init__(self, coverage: float = 0.25, n_units: int = 4, seed: int = 7, world: World | None = None,
                  db: Database | None = None, edge_key: bytes | None = None):
         self.W = world or World()
@@ -62,14 +99,14 @@ class ControlRoom:
         self.cameras = {c: Camera(c) for c in rng.sample(self.W.junctions, int(self.coverage * len(self.W.junctions)))}
         self.units = {f"Unit {i + 1}": Unit(rng.choice(self.W.junctions)) for i in range(self.n_units)}
         self.t = 0.0
-        self.case = None          # {"plate", "incident", "reported_at", "live", "vehicle"}
-        self.belief = None
-        self.last_ok: Sighting | None = None
-        self.last_ok_sid: int | None = None  # database id of the last accepted sighting
+        self.cases: dict[str, CaseTrack] = {}  # plate -> case
+        self.cur: CaseTrack | None = None      # case in focus
+        self.unit_case: dict[str, str] = {}    # unit -> plate it was sent for (lock)
         self.sightings: list[dict] = []
-        self.timeline: list[dict] = []       # judged sightings in capture order, with the state before each
-        self.track: list[dict] = []          # reconstructed route segments between accepted sightings
         self.pending_plan: list[tuple[str, int]] | None = None
+        self.pending_case: dict[str, str] = {}
+        self.plan_probs: dict[str, float] = {}
+        self.plan_locks: dict[str, str] = {}   # locks the last plan kept (unit still useful to its case)
         self.unit_alert: dict[str, dict] = {}  # unit -> {"id", "sent_wall", "acked"}
         self.events: list[Event] = []
         self.chase = None         # demo ground truth: {"route", "first_t", "next_i", "model"}
@@ -98,8 +135,11 @@ class ControlRoom:
         return v
 
     def close_vehicle(self, vid: int, actor: str = "officer"):
+        v = self.db.vehicle(vid)
         self.db.close_vehicle(vid, actor)
         self._registry_t = 0.0
+        if v and v["plate"] in self.cases:
+            self.close_case(v["plate"])
 
     def registry(self) -> list[dict]:
         if time.time() - self._registry_t > 5:
@@ -108,8 +148,7 @@ class ControlRoom:
 
     def hotlist(self) -> list[str]:
         plates = list(self.db.hotlist())
-        if self.case and self.case["plate"] not in plates:
-            plates.append(self.case["plate"])
+        plates += [p for p in self.cases if p not in plates]
         return plates
 
     def describe(self, plate: str | None = None) -> str:
@@ -132,34 +171,97 @@ class ControlRoom:
         self.chase = {"route": route, "first_t": first_t, "next_i": 1, "model": model, "pending": []}
         self.open_case(plate, incident)
 
-    def open_case(self, plate: str, incident: int | None = None, vehicle: dict | None = None):
+    def open_case(self, plate: str, incident: int | None = None, vehicle: dict | None = None,
+                  severity: float | None = None, add: bool = False):
+        """Open a case and focus it. add=False replaces every open case (one-suspect mode);
+        add=True keeps the others, so the planner shares the units between them by severity."""
         plate = "".join(c for c in plate.upper() if c.isalnum())
         vehicle = vehicle or self.db.active_vehicle(plate)
-        self.case = {"plate": plate, "incident": incident, "reported_at": self.t, "live": incident is None,
-                     "vehicle": vehicle}
-        self.belief = None
-        self.last_ok = None
-        self.last_ok_sid = None
-        self.timeline = []
+        severity = severity or (vehicle or {}).get("severity") or DEFAULT_SEVERITY
+        if not add:
+            self.cases, self.unit_case = {}, {}
+        self.cases.pop(plate, None)
+        self._unlock(plate)
+        idx = max((c.idx + 1 for c in self.cases.values()), default=0)
+        self.cur = self.cases[plate] = CaseTrack(
+            {"plate": plate, "incident": incident, "reported_at": self.t, "live": incident is None,
+             "vehicle": vehicle, "severity": float(severity)}, idx)
         if incident is not None:
-            self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self.seed + 7)
+            self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self._belief_seed())
             self.belief.reseed(incident, self.t)
             self.last_ok = Sighting(incident, self.t)
             self.log("info", f"Hotlist entry {plate}: incident reported at junction {incident}.")
             self.propose_plan("incident report")
         else:
             # live mode: only the real edge cameras exist, so "not seen" evidence comes only from them
-            self.cameras = {e["junction"]: Camera(e["junction"]) for e in self.edges.values()}
+            if not add:
+                self.cameras = {e["junction"]: Camera(e["junction"]) for e in self.edges.values()}
             self.log("info", f"Hotlist entry {plate} opened (live mode, {len(self.cameras)} real camera(s)). "
                              f"Waiting for a camera to read it.")
-        self.db.audit("case", f"Tracking opened for {self.describe()}", t_sim=self.t)
+        self.db.audit("case", f"Tracking opened for {self.describe()} (severity {severity:g})", t_sim=self.t)
+
+    def _belief_seed(self) -> int:
+        return self.seed + 7 + 101 * (self.cur.idx if self.cur else 0)
+
+    def _unlock(self, plate: str):
+        self.unit_case = {u: p for u, p in self.unit_case.items() if p != plate}
+
+    @contextmanager
+    def _on(self, plate: str | None):
+        """Work on one case without changing the officer's focus."""
+        prev = self.cur
+        if plate is not None:
+            self.cur = self.cases.get(plate)
+        try:
+            yield self.cur
+        finally:
+            self.cur = prev
+
+    def focus(self, plate: str) -> bool:
+        if plate not in self.cases:
+            return False
+        self.cur = self.cases[plate]
+        return True
+
+    def set_severity(self, plate: str, severity: float) -> bool:
+        """Officer-set weight of a case in the shared plan; re-plans at once."""
+        c = self.cases.get(plate)
+        if c is None:
+            return False
+        c.info["severity"] = float(severity)
+        self.log("case", f"Severity of {plate} set to {severity:g}.")
+        self.propose_plan(f"severity change for {plate}")
+        return True
+
+    def close_case(self, plate: str) -> bool:
+        """Stop tracking one case; its units become free for the others at the next plan."""
+        c = self.cases.pop(plate, None)
+        if c is None:
+            return False
+        self._unlock(plate)
+        if self.cur is c:
+            self.cur = next(iter(self.cases.values()), None)
+        self.log("case", f"Case {plate} closed; its units are free for the other case(s).")
+        self.propose_plan(f"closing {plate}")
+        return True
 
     # ------------------------------------------------------------------ sightings
     def add_sighting(self, camera: int, t: float | None = None, plate: str | None = None,
-                     score: float = 1.0, true: bool = True, source: str = "camera", thumb: str | None = None) -> dict:
+                     score: float = 1.0, true: bool = True, source: str = "camera", thumb: str | None = None,
+                     case: str | None = None) -> dict:
         """Judge a sighting by its capture time t. One that arrives after a later sighting was already
         judged (slow link, edge queue replayed) rolls the belief back to before that sighting and
-        replays everything from there in capture-time order, so arrival order never changes the result."""
+        replays everything from there in capture-time order, so arrival order never changes the result.
+
+        case: plate of the case it belongs to (an OCR read may differ from the hotlist plate);
+        default: the case with this plate, else the case in focus."""
+        if case is None and plate is not None:
+            p = "".join(c for c in plate.upper() if c.isalnum())
+            case = p if p in self.cases else None
+        with self._on(case):
+            return self._add_sighting(camera, t, plate, score, true, source, thumb)
+
+    def _add_sighting(self, camera, t, plate, score, true, source, thumb) -> dict:
         t = self.t if t is None else t
         self.seq += 1
         s = Sighting(camera, t, score, self.seq, true)
@@ -200,7 +302,7 @@ class ControlRoom:
         rec.pop("why", None)
         what = f"Sighting #{s.seq}: {rec['plate']} read by {rec['source']} at junction {s.camera} (score {s.score:.2f})"
         if self.last_ok is None:  # live case: the first camera read starts the belief
-            self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self.seed + 7)
+            self.belief = ParticleBelief(self.W.sampler, n=N_PARTICLES, horizon_s=900, seed=self._belief_seed())
             self.belief.reseed(s.camera, s.t)
             self.last_ok, accepted = s, True
             rec["status"] = "accepted"
@@ -261,8 +363,15 @@ class ControlRoom:
             self.log("route", f"No feasible road path {a.camera} → {b.camera} in {b.t - a.t:.0f} s.")
 
     # ------------------------------------------------------------------ planning
+    @property
+    def plan_prob(self) -> float:
+        """Predicted interception chance for the case in focus."""
+        return self.plan_probs.get(self.case["plate"], 0.0) if self.case else 0.0
+
     def propose_plan(self, reason: str):
-        if self.belief is None:
+        """One severity-weighted plan for every case with a belief; units keep their case locks."""
+        active = {p: c for p, c in self.cases.items() if c.belief is not None}
+        if not active:
             return
         a = time.perf_counter()
         pos = {u: x.position(self.t) for u, x in self.units.items()}
@@ -270,35 +379,44 @@ class ControlRoom:
         for u, x in self.units.items():
             if not x.started:
                 etas[u] = [e + DISPATCH for e in etas[u]]
-        cov = coverage_sets(self.belief.future(self.t), self.belief.w, etas, MARGIN)
+        cases = {p: (coverage_sets(c.belief.future(self.t), c.belief.w, etas, MARGIN), c.belief.w, c.info["severity"])
+                 for p, c in active.items()}
+        current = {u: x.target for u, x in self.units.items()}
+        locks = self.plan_locks = useful_locks(self.unit_case, cases, current)
+        cov, w = merge_cases(cases, locks)
         sticky = {u: STICKY_WAITING if x.schedule and x.schedule[-1][1] <= self.t else STICKY
                   for u, x in self.units.items()}
-        plan = greedy_plan(cov, self.belief.w, list(self.units),
-                           current={u: x.target for u, x in self.units.items()}, sticky=sticky)
+        plan = greedy_plan(cov, w, list(self.units), current=current, sticky=sticky)
         covered = set().union(*(cov[p] for p in plan)) if plan else set()
-        prob = sum(self.belief.w[k] for k in covered)
+        self.plan_probs = {p: sum(c.belief.w[k] for q, k in covered if q == p) for p, c in active.items()}
         ms = 1000 * (time.perf_counter() - a)
         changed = [(u, v) for u, v in plan if self.units[u].target != v]
         self.pending_plan = plan if changed else None
-        self.plan_prob = prob
+        self.pending_case = {u: serving_case(cov[(u, v)], w, locks.get(u)) for u, v in plan}
+        probs = ", ".join(f"{p} {100 * q:.0f}%" for p, q in self.plan_probs.items())
         if changed:
             self.log("plan", f"Plan after {reason}: {len(changed)} unit move(s), predicted interception "
-                             f"chance {100 * prob:.0f}% ({ms:.0f} ms). Awaiting officer approval.",
-                     moves=[(u, v) for u, v in changed])
+                             f"chance {probs} ({ms:.0f} ms). Awaiting officer approval.",
+                     moves=[(u, v, self.pending_case[u]) for u, v in changed])
         else:
-            self.log("info", f"Plan after {reason}: no change ({100 * prob:.0f}% predicted).")
+            self.log("info", f"Plan after {reason}: no change ({probs} predicted).")
 
     def approve(self):
         if not self.pending_plan:
             return
-        vid = ((self.case or {}).get("vehicle") or {}).get("id")
         for u, v in self.pending_plan:
             if self.units[u].target == v:
                 continue
+            plate = self.pending_case.get(u)
+            if plate in self.cases:
+                self.unit_case[u] = plate  # locked: later plans keep this unit on this case
+            with self._on(plate):
+                vid = ((self.case or {}).get("vehicle") or {}).get("id")
+                wanted = self.describe()
             self.units[u].send(self.g, v, self.t)
             eta = max(0.0, self.units[u].schedule[-1][1] - self.t) if self.units[u].schedule else 0.0
             a = self.db.add_alert(u, "assign", f"Proceed to junction {v} and wait (ETA {eta:.0f} s). "
-                                               f"Wanted: {self.describe()}. Officer-led stop only.",
+                                               f"Wanted: {wanted}. Officer-led stop only.",
                                   vid, v, self.g.xy[v])
             self.unit_alert[u] = {"id": a["id"], "sent_wall": time.time(), "acked": False, "flagged": False}
         self.log("approve", f"Officer approved: {', '.join(f'{u} → junction {v}' for u, v in self.pending_plan)}. "
@@ -395,8 +513,7 @@ class ControlRoom:
             if v:
                 self.log("alert", f"Hotlist hit: {self.describe(matched)} read by {r['name']} — tracking started.")
                 self.open_case(matched, vehicle=v)
-        target = (self.case or {}).get("plate")
-        hit = bool(matched and matched == target)
+        hit = bool(matched and matched in self.cases)
         rec = {"rid": self.read_seq, "t": round(t, 1), "camera": r["name"], "junction": e["junction"],
                "plate": plate, "conf": r.get("conf"), "score": r.get("score"), "hit": hit,
                "hotlist": bool(matched), "thumb": r.get("thumb")}
@@ -406,9 +523,9 @@ class ControlRoom:
         if hit:
             e["matches"] += 1
             s = self.add_sighting(e["junction"], t, plate, float(r.get("score", 1.0)), source=r["name"],
-                                  thumb=r.get("thumb"))
+                                  thumb=r.get("thumb"), case=matched)
             rec["status"] = s["status"]
-        elif matched:  # another registered vehicle: tell the stations, do not divert the active case
+        elif matched:  # a registered vehicle with no open case: tell the stations, do not divert the units
             v = self.db.active_vehicle(matched)
             self.db.add_alert("all stations", "sighting",
                               f"Registered vehicle {self.describe(matched)} seen by {r['name']} at junction "
@@ -496,9 +613,10 @@ class ControlRoom:
                 self.add_sighting(v, tv, score=round(self.rng.uniform(0.85, 0.99), 2))
             if ch["next_i"] >= len(route) and not self.outcome:
                 self._finish({"kind": "escape", "t": route[-1][1]}, f"Suspect left the area at t = {route[-1][1]:.0f} s.")
-        if self.belief and self.last_ok:
-            live = {c: RECALL for c, cam in self.cameras.items() if cam.live and c != self.last_ok.camera}
-            self.belief.negative_evidence(self.t, live)
+        for c in self.cases.values():
+            if c.belief and c.last_ok:
+                live = {n: RECALL for n, cam in self.cameras.items() if cam.live and n != c.last_ok.camera}
+                c.belief.negative_evidence(self.t, live)
 
     # ------------------------------------------------------------------ view
     def unit_view(self, u: str) -> dict:
@@ -512,14 +630,18 @@ class ControlRoom:
                 "state": "waiting" if waiting else ("driving" if x.target is not None else "idle"),
                 "path": [g.xy[pos]] + ([g.xy[v] for v, tv in x.schedule if tv >= self.t] if x.schedule else []),
                 "eta": max(0.0, x.schedule[-1][1] - self.t) if x.schedule and not waiting else 0.0,
+                "case": self.unit_case.get(u),
                 "alert": st and {"id": st["id"], "acked": st["acked"], "late": st["flagged"] and not st["acked"]}}
 
     def snapshot(self, show_truth: bool = True) -> dict:
         g = self.g
-        particles = []
-        if self.belief:
+        particles = []  # [lon, lat, weight 0..1, case index]; every open case, each scaled on its own
+        order = list(self.cases)
+        for ci, c in enumerate(self.cases.values()):
+            if not c.belief:
+                continue
             agg: dict[int, float] = {}
-            for r, w in zip(self.belief.routes, self.belief.w):
+            for r, w in zip(c.belief.routes, c.belief.w):
                 node = r[0][0]
                 for v, tv in r:
                     if tv <= self.t:
@@ -529,15 +651,20 @@ class ControlRoom:
                 agg[node] = agg.get(node, 0.0) + w
             top = sorted(agg.items(), key=lambda x: -x[1])[:250]
             mx = max((w for _, w in top), default=1.0)
-            particles = [[*g.xy[v], round(w / mx, 3)] for v, w in top]
-        pend = [{"unit": u, "from": g.xy[self.units[u].position(self.t)], "to": g.xy[v], "node": v}
-                for u, v in (self.pending_plan or [])]
+            particles += [[*g.xy[v], round(w / mx, 3), ci] for v, w in top]
+        pend = [{"unit": u, "from": g.xy[self.units[u].position(self.t)], "to": g.xy[v], "node": v,
+                 "case": self.pending_case.get(u)} for u, v in (self.pending_plan or [])]
+        cases = [{"plate": p, "index": order.index(p), "severity": c.info["severity"], "live": c.info["live"],
+                  "focus": c is self.cur, "prob": round(self.plan_probs.get(p, 0.0), 3),
+                  "units": [u for u, q in self.unit_case.items() if q == p],
+                  "vehicle": c.info["vehicle"], "seen": c.last_ok is not None} for p, c in self.cases.items()]
         snap = {
             "t": round(self.t, 1), "seed": self.seed,
             "case": self.case and {**self.case, "lonlat": g.xy[self.case["incident"]] if self.case["incident"] is not None else None},
             "cameras": [{"node": c, "lonlat": g.xy[c], "live": cam.live} for c, cam in self.cameras.items()],
+            "cases": cases,
             "units": [self.unit_view(u) for u in self.units], "pending_plan": pend, "particles": particles,
-            "plan_prob": round(getattr(self, "plan_prob", 0.0), 3),
+            "plan_prob": round(self.plan_prob, 3),
             "sightings": [{k: v for k, v in x.items() if k != "thumb"} | {"thumb": bool(x.get("thumb"))}
                           for x in self.sightings[-30:]],
             "track": self.track[-20:],
