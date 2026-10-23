@@ -9,15 +9,18 @@ from __future__ import annotations
 import heapq
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INF = math.inf
 
-# Default study area; change to your own city (lat, lon) and radius in metres.
+# Default study area; pass --center LAT,LON --radius M for your own city (see README "Your own city").
 DEFAULT_CENTER = (17.3850, 78.4867)  # Hyderabad, Abids / Koti area
 DEFAULT_RADIUS_M = 3000
+DEFAULT_GRAPH = ROOT / "data" / "city_graph.json"
+GRAPH_ENV = "WTW_GRAPH"  # graph file the simulator and control room load instead of DEFAULT_GRAPH
 MAIN_ROADS = {"motorway", "trunk", "primary", "secondary", "motorway_link", "trunk_link", "primary_link"}
 
 
@@ -27,6 +30,7 @@ class RoadGraph:
     adj: list[list[tuple[int, float]]]               # u -> [(v, seconds)]
     main: set[tuple[int, int]] = field(default_factory=set)  # edges on main roads
     osm_ids: list[int] = field(default_factory=list)
+    meta: dict = field(default_factory=dict)         # study area it was built from (center, radius_m)
 
     @property
     def n(self) -> int:
@@ -45,13 +49,45 @@ class RoadGraph:
 
     # ---------- persistence ----------
     def save(self, path: Path):
-        path.write_text(json.dumps({"xy": self.xy, "adj": self.adj, "main": sorted(self.main), "osm_ids": self.osm_ids}))
+        path.write_text(json.dumps({"xy": self.xy, "adj": self.adj, "main": sorted(self.main), "osm_ids": self.osm_ids,
+                                    "meta": self.meta}))
 
     @classmethod
     def load(cls, path: Path) -> "RoadGraph":
         d = json.loads(path.read_text())
         return cls([tuple(p) for p in d["xy"]], [[(v, w) for v, w in nb] for nb in d["adj"]],
-                   {tuple(e) for e in d["main"]}, d["osm_ids"])
+                   {tuple(e) for e in d["main"]}, d["osm_ids"], d.get("meta", {}))
+
+
+def parse_center(text: str) -> tuple[float, float]:
+    """'LAT,LON' in decimal degrees -> (lat, lon)."""
+    parts = text.replace(" ", "").split(",")
+    if len(parts) != 2:
+        raise ValueError(f"center must be LAT,LON, got {text!r}")
+    lat, lon = float(parts[0]), float(parts[1])
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError(f"center out of range: {lat}, {lon}")
+    return lat, lon
+
+
+def area_graph_path(center: tuple[float, float], radius_m: int) -> Path:
+    """Where the graph of one study area is kept, so several cities can sit side by side in data/."""
+    return ROOT / "data" / f"city_{center[0]:.4f}_{center[1]:.4f}_{int(radius_m)}m.json"
+
+
+def default_graph_path() -> Path:
+    """The map everything loads: $WTW_GRAPH if set, else data/city_graph.json."""
+    env = os.environ.get(GRAPH_ENV)
+    return Path(env) if env else DEFAULT_GRAPH
+
+
+def ensure_graph(center: tuple[float, float], radius_m: int) -> Path:
+    """Graph file for a study area, downloading it from OSM the first time."""
+    path = area_graph_path(center, radius_m)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        build_from_osm(center, radius_m).save(path)
+    return path
 
 
 def dijkstra(g: RoadGraph, source: int, banned_nodes: set | None = None, banned_edges: set | None = None,
@@ -153,12 +189,22 @@ def build_from_osm(center=DEFAULT_CENTER, radius_m=DEFAULT_RADIUS_M) -> RoadGrap
         if MAIN_ROADS & set(hw):
             main.add((a, b))
     xy = [(float(G.nodes[o]["x"]), float(G.nodes[o]["y"])) for o in ids]
-    return RoadGraph(xy, [sorted(d.items()) for d in adj], main, [int(o) for o in ids])
+    return RoadGraph(xy, [sorted(d.items()) for d in adj], main, [int(o) for o in ids],
+                     {"center": list(center), "radius_m": radius_m})
 
 
 if __name__ == "__main__":
+    import argparse
     import sys
-    out = ROOT / "data" / "city_graph.json"
-    g = build_from_osm()
+    ap = argparse.ArgumentParser(description="Download the drivable OSM road graph of a study area.")
+    ap.add_argument("--center", type=parse_center, default=DEFAULT_CENTER, help="LAT,LON (default: Hyderabad)")
+    ap.add_argument("--radius", type=int, default=DEFAULT_RADIUS_M, help="metres around the center")
+    ap.add_argument("--out", type=Path, default=DEFAULT_GRAPH, help="graph file (default data/city_graph.json)")
+    a = ap.parse_args()
+    if a.radius <= 0:
+        ap.error("--radius must be positive")
+    out = a.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    g = build_from_osm(a.center, a.radius)
     g.save(out)
     print(f"nodes={g.n} edges={sum(len(a) for a in g.adj)} main_road_edges={len(g.main)} -> {out}", file=sys.stderr)
