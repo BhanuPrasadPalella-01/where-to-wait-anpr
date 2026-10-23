@@ -5,6 +5,7 @@ with E_u(v) = dist(x_u, v) + delta. Objective: maximise sum of covered particle 
 each unit at most one node, each node at most one unit, forbidden nodes skipped.
 F is monotone submodular and the constraint is a partition matroid, so greedy >= 1/2 OPT
 (Fisher, Nemhauser & Wolsey 1978). `exact_plan` brute-forces small cases to measure the real gap.
+`merge_cases` extends this to several suspects with officer-set severity weights.
 """
 from __future__ import annotations
 
@@ -76,6 +77,54 @@ def greedy_plan(cov, weights, units, eps: float = 1e-6, current: dict | None = N
         free_units.discard(best[0])
         used_nodes.add(best[1])
     return assign
+
+
+def merge_cases(cases: dict, locks: dict | None = None):
+    """Several suspects at once: one coverage problem over (case, particle) elements.
+
+    cases: case id -> (cov, weights, severity), cov as returned by coverage_sets for that case's belief.
+    Element (c, k) weighs severity_c * w_k, so greedy_plan maximises severity-weighted coverage and
+    keeps its 1/2 guarantee (a weighted sum of coverage functions is still monotone submodular).
+    locks: unit -> case id. A locked unit only counts its own case's particles, so the planner never
+    pulls a unit off one suspect to chase another; units locked to a case not in `cases` are free.
+    Returns (cov, weights) in the same shape greedy_plan and objective take (weights is a dict).
+    """
+    locks = {u: c for u, c in (locks or {}).items() if c in cases}
+    cov: dict[tuple[str, int], set[tuple]] = defaultdict(set)
+    weights: dict[tuple, float] = {}
+    for c, (cc, w, sev) in cases.items():
+        for (u, v), s in cc.items():
+            if locks.get(u, c) != c:
+                continue
+            for k in s:
+                weights[(c, k)] = sev * w[k]
+            cov[(u, v)] |= {(c, k) for k in s}
+    return dict(cov), weights
+
+
+def useful_locks(locks: dict, cases: dict, current: dict, min_share: float = 0.05) -> dict:
+    """Keep a unit's lock only while its present junction still covers >= min_share of its case's belief
+    weight. Without this, every unit sent for the first case stays tied to it, and a case reported
+    later gets no units at all; a unit that no longer helps its suspect is released, not pulled."""
+    out = {}
+    for u, c in locks.items():
+        v = current.get(u)
+        if c not in cases or v is None:
+            continue
+        cov, w, _ = cases[c]
+        if sum(w[k] for k in cov.get((u, v), ())) >= min_share * sum(w):
+            out[u] = c
+    return out
+
+
+def serving_case(elements, weights, lock=None):
+    """The case a (unit, node) assignment mainly serves: its lock, else the case with most covered weight."""
+    if lock is not None:
+        return lock
+    by_case: dict = defaultdict(float)
+    for c, k in elements:
+        by_case[c] += weights[(c, k)]
+    return max(by_case, key=by_case.get) if by_case else None
 
 
 def exact_plan(cov, weights, units, max_nodes: int = 40):
