@@ -26,7 +26,7 @@ Mark an item `[x]` when it is done and add the date.
 - [x] (2026-10-22) **Messaging layer** — signed (HMAC), numbered sighting messages between edge and control room;
       duplicate drop by (camera, seq); out-of-order sightings replayed by capture time (belief
       snapshot + rollback); queue on the edge while the server is down; tests.
-- [ ] **Multiple suspects** — several active cases with officer-set severity weights; greedy plan
+- [x] (2026-10-24) **Multiple suspects** — several active cases with officer-set severity weights; greedy plan
       maximises severity-weighted coverage; one unit never pulled between cases; simulator
       experiment and dashboard support.
 - [ ] **Your own city** — `--center LAT,LON --radius M` options for `planner.roadgraph` and the

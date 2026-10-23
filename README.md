@@ -34,16 +34,17 @@ measurable gain, and the 30 s re-plan timer from the original design made units 
 planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K-shortest paths
            fugitive.py    fugitive route models (fastest+2% wrong turns, main-road, random walk, held-out back-streets)
            belief.py      feasibility gate + particle belief (conditioning, rejuvenation, negative evidence)
-           plan.py        greedy submodular interception planner + brute-force check
+           plan.py        greedy submodular interception planner + brute-force check; several suspects by severity
            simulate.py    chase simulator, baselines B0/B1/B2, ablations, parallel sweeps
+           multi_sim.py   two suspects at once: severity weights, unit locks, split-fleet baseline
            reconstruct.py route reconstruction between sightings (Yen's K paths, space-time feasibility)
            sumo_graph.py  planner graph from a SUMO network
            sumo_sim.py    SUMO/TraCI replication with real traffic (pilot: reports/RESULTS.md section 9)
-server/    control_room.py (case state, gate, belief, plan, officer approval, alerts, late-sighting replay),
+server/    control_room.py (open cases, gate, belief, shared plan, officer approval, alerts, late-sighting replay),
            messages.py (signed, numbered edge messages), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
-           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py
+           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
            city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
            (the same checks on synthetic graphs, always run), test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
@@ -51,6 +52,7 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts),
            test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO), test_messages.py,
            test_edge_inbox.py, test_replay.py (signing, duplicates, out-of-order replay),
+           test_multi_case.py, test_control_room_cases.py, test_multi_sim.py (several suspects),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -88,6 +90,18 @@ keeps those the car could have driven in the observed time (`(1 − σ)·T ≤ �
 travel time matches the gap. The best path is drawn solid on the map, alternatives dashed; segments are
 stored per vehicle and can be replayed later from the Registry tab (**History**).
 
+### Several suspects
+
+More than one case can be open at once (**＋ Add case** next to the plate box, or **＋ Track alongside**
+in the Registry). Each case keeps its own belief, feasibility gate and route history, and has a
+severity (from the registry entry, else 3; the officer can change it in the case list). One plan covers
+every case: a particle of case *c* counts severity(*c*) × its weight, so the greedy planner maximises
+severity-weighted coverage (`planner/plan.py` `merge_cases`; still monotone submodular, so the ½
+guarantee holds). Once the officer approves a move, that unit is locked to the case it was sent for and
+is never pulled to another suspect; closing a case frees its units. Camera reads go to the case of the
+matched plate; the officer's focus (the case shown in detail) does not change. Each case's predicted
+positions have their own colour on the map.
+
 ### Police alerts
 
 Approving a plan sends each moved unit an assignment alert; each accepted sighting alerts all stations;
@@ -107,6 +121,8 @@ python3 -m venv .venv
 .venv/bin/python -m tests.test_planner
 .venv/bin/python -m planner.simulate --name demo --coverages 0.1,0.3 --runs 50
 .venv/bin/python scripts/plot_results.py demo
+.venv/bin/python -m planner.multi_sim --name multi_suspect --runs 200   # two suspects, 5 methods
+.venv/bin/python scripts/multi_suspect_table.py reports/multi_suspect.jsonl
 ```
 
 Control-room dashboard (live demo): `.venv/bin/python -m uvicorn server.app:app --port 8000`, open
@@ -167,7 +183,9 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: GitHub Actions CI running the unit tests on every push (CPU only, no downloads).
 * Done: SUMO replication runs without TraCI errors; 160-episode pilot in normal and peak traffic.
 * Done: signed, numbered edge messages; duplicates dropped; late sightings replayed by capture time.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — multiple suspects, your own city.
+* Done: several suspects at once — severity-weighted shared plan, units locked to their case,
+  dashboard case list; two-suspect simulator experiment (reports/RESULTS.md section 10).
+* Next: see [`ROADMAP.md`](ROADMAP.md) — your own city.
 
 ## Data and ethics
 
