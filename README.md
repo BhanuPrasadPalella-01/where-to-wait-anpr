@@ -53,6 +53,7 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO), test_messages.py,
            test_edge_inbox.py, test_replay.py (signing, duplicates, out-of-order replay),
            test_multi_case.py, test_control_room_cases.py, test_multi_sim.py (several suspects),
+           test_own_city.py (study-area options, $WTW_GRAPH),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -116,7 +117,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest -q tests                # all unit tests; city-map tests skip until the map exists
 # tests only (what CI installs): .venv/bin/pip install -r requirements-test.txt
-.venv/bin/python -m planner.roadgraph            # download the OSM road graph (edit DEFAULT_CENTER for your city)
+.venv/bin/python -m planner.roadgraph            # download the OSM road graph (Hyderabad; see "Your own city")
 .venv/bin/python -m tests.test_roadgraph         # full-size runs on the city map, with timings
 .venv/bin/python -m tests.test_planner
 .venv/bin/python -m planner.simulate --name demo --coverages 0.1,0.3 --runs 50
@@ -132,6 +133,30 @@ feasibility gate flagging an impossible journey, **Camera offline** marks a came
 cameras post signed reads to `POST /api/edge/read` (see "Edge messaging" below); `POST /api/sighting`
 (`{"camera": <junction>, "plate": "...", "score": 0.93}`) is an unsigned manual entry, refused when
 `WTW_EDGE_KEY` is set.
+
+### Your own city
+
+The default study area is 3 km around Abids, Hyderabad. To use another city, download its drivable
+road network from OpenStreetMap (needs `osmnx`, in `requirements.txt`; a few MB of JSON):
+
+```bash
+.venv/bin/python -m planner.roadgraph --center 12.9716,77.5946 --radius 2500 --out data/bengaluru.json
+```
+
+`--center` is `LAT,LON` in decimal degrees, `--radius` metres around it; without `--out` the graph
+replaces `data/city_graph.json`. The file records the center and radius it was built from. Then point
+everything at it:
+
+* simulator: `python -m planner.simulate --graph data/bengaluru.json ...` (also `planner.multi_sim`), or
+  `--center 12.9716,77.5946 --radius 2500` to download that area into `data/city_<lat>_<lon>_<r>m.json`
+  on first use and reuse it after;
+* control room: `WTW_GRAPH=data/bengaluru.json .venv/bin/python -m uvicorn server.app:app --port 8000`;
+  the dashboard map follows the graph. Edge nodes get their junction when they register, so restart
+  them after switching city (a fixed `--junction` id belongs to the old map);
+* tests: `tests.test_roadgraph` and `tests.test_planner` always use `data/city_graph.json`.
+
+Larger radii grow the graph roughly with the area and slow the planner (3 km gives ~10,800 junctions).
+`data/` is git-ignored, so maps are never committed.
 
 ## Live demo
 
@@ -185,7 +210,9 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: signed, numbered edge messages; duplicates dropped; late sightings replayed by capture time.
 * Done: several suspects at once — severity-weighted shared plan, units locked to their case,
   dashboard case list; two-suspect simulator experiment (reports/RESULTS.md section 10).
-* Next: see [`ROADMAP.md`](ROADMAP.md) — your own city.
+* Done: any city — `--center/--radius` for the road graph and simulators, `$WTW_GRAPH` for the
+  control room.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — fine-tune the plate detector on own photos.
 
 ## Data and ethics
 

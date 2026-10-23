@@ -29,7 +29,7 @@ Mark an item `[x]` when it is done and add the date.
 - [x] (2026-10-24) **Multiple suspects** — several active cases with officer-set severity weights; greedy plan
       maximises severity-weighted coverage; one unit never pulled between cases; simulator
       experiment and dashboard support.
-- [ ] **Your own city** — `--center LAT,LON --radius M` options for `planner.roadgraph` and the
+- [x] (2026-10-24) **Your own city** — `--center LAT,LON --radius M` options for `planner.roadgraph` and the
       simulator; document how to switch city; regenerate nothing large into git.
 
 ## Perception
