@@ -13,6 +13,13 @@ ground truth. Accuracy over all held-out vehicles is in [eval.md](eval.md).
 
 `reel_v*_strip.jpg` shows the same vehicle as each camera saw it.
 
+## One vehicle's journey on all four cameras
+
+[journey_grid_v699.mp4](journey_grid_v699.mp4): the four cameras side by side, trimmed to the 135 s in which the
+dump truck (vehicle 699) drives camera 1 → 2 → 3 → 4. Whichever camera it is in gets a green border and the
+truck a green SUSPECT box with its match score; a banner ticks off each camera; stretches where it is in no
+camera play at 4× speed (`scripts/roundabout_journey_grid.py`).
+
 ## Full video and detection counts
 
 [all_cameras_tracked.mp4](all_cameras_tracked.mp4): all four cameras for the full 10 minutes with every
