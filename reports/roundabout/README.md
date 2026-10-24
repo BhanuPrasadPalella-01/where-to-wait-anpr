@@ -13,6 +13,14 @@ ground truth. Accuracy over all held-out vehicles is in [eval.md](eval.md).
 
 `reel_v*_strip.jpg` shows the same vehicle as each camera saw it.
 
+## All vehicles that cross the four cameras
+
+[four_camera_vehicles.mp4](four_camera_vehicles.mp4): only the 74 vehicles that pass through all four cameras
+(per the dataset's ground truth), boxed by our pipeline, each with one colour and id in every camera; other
+traffic is left unboxed. Per-camera and overall counters; 2x speed, frames without these vehicles dropped.
+Our system detected 61 of the 74 in all four cameras and the other 13 in three of four
+(`scripts/roundabout_4cam_video.py`).
+
 ## One vehicle's journey on all four cameras
 
 [journey_grid_v699.mp4](journey_grid_v699.mp4): the four cameras side by side, trimmed to the 135 s in which the
