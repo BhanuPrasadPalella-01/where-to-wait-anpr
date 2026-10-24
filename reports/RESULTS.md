@@ -215,3 +215,29 @@ re-used for the other.
 Full-size SUMO replication (200 chases per cell, all coverages; pilot in section 9); severity weights under unit
 scarcity (section 10); dashboard + tabletop demo;
 Indian detector fine-tuning on own photos; your own city's map.
+
+---
+
+## 11. Camera-to-camera tracking on real footage (RoundaboutHD)
+
+Data: [RoundaboutHD](https://arxiv.org/abs/2507.08729) — four real 4K traffic cameras at roundabouts along
+~2.3 km in Carmel, Indiana, 10 minutes each, with ground-truth vehicle ids shared across cameras. Plates
+are deliberately unreadable in this dataset, so this measures the system's plate-unreadable fallback.
+
+Pipeline (`scripts/roundabout_fullpass.py`, `scripts/roundabout_eval.py`): each camera's video is streamed
+out of the 8 GB dataset zip (`scripts/remote_zip.py`), YOLO26s + ByteTrack track every vehicle (1,631
+tracks), each track gets a ResNet-50 + colour-histogram fingerprint, the suspect is marked once in its
+first camera, and each next camera picks the most similar candidate. Minimum driving times between
+cameras come from Dijkstra on the OpenStreetMap road graph. Calibration (typical arrival ratio, entry
+direction) uses even-numbered vehicles only; results are on the odd-numbered ones.
+
+| Method | Hand-offs | Top-1 correct | Top-5 | Candidates per hand-off | 4-camera journeys fully right |
+|---|---|---|---|---|---|
+| Appearance only | 245 | 21.2% | 33.9% | 195.9 | 3.3% of 30 |
+| + travel time (loose window) | 244 | 23.0% | 37.7% | 123.8 | 3.3% of 30 |
+| **+ road-graph travel time + entry direction** | 245 | **46.1%** | **75.9%** | **17.7** | **26.7% of 30** |
+
+The road-graph time window and direction cut the candidates from ~124 to ~18 and double top-1 accuracy.
+Direction and travel-time masks are established practice in multi-camera tracking (AI City Challenge);
+the contribution here is measuring them inside this system on real footage. Journey reels are generated
+locally (`scripts/roundabout_reel.py`) and not committed.
