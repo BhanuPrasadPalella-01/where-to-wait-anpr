@@ -13,6 +13,12 @@ ground truth. Accuracy over all held-out vehicles is in [eval.md](eval.md).
 
 `reel_v*_strip.jpg` shows the same vehicle as each camera saw it.
 
+## Full video and detection counts
+
+[all_cameras_tracked.mp4](all_cameras_tracked.mp4): all four cameras for the full 10 minutes with every
+tracked vehicle boxed. Our pipeline found 795 of the 833 annotated vehicle passes (95.4%); details in
+[detections.md](detections.md).
+
 ## Footage credit
 
 Video is from **RoundaboutHD: High-Resolution Real-World Urban Environment Benchmark for Multi-Camera
