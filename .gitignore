@@ -24,3 +24,8 @@ reports/*.log
 
 # local Claude Code settings
 .claude/
+
+# RoundaboutHD footage-derived media (dataset licence unclear; real vehicles) and run logs
+reports/roundabout/*.mp4
+reports/roundabout/*.jpg
+reports/logs/
