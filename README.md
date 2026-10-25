@@ -44,7 +44,8 @@ server/    control_room.py (open cases, gate, belief, shared plan, officer appro
            messages.py (signed, numbered edge messages), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
-           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py
+           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py,
+           own_photos.py + finetune_own.py (fine-tune the detector on own photos, see FINETUNE.md)
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
            city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
            (the same checks on synthetic graphs, always run), test_camera_node.py (OCR vote, read backlog), test_control_room.py (cases, gate, approval,
@@ -53,7 +54,7 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO), test_messages.py,
            test_edge_inbox.py, test_replay.py (signing, duplicates, out-of-order replay),
            test_multi_case.py, test_control_room_cases.py, test_multi_sim.py (several suspects),
-           test_own_city.py (study-area options, $WTW_GRAPH),
+           test_own_city.py (study-area options, $WTW_GRAPH), test_own_photos.py (label checks, group split, report table),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -157,6 +158,18 @@ everything at it:
 
 Larger radii grow the graph roughly with the area and slow the planner (3 km gives ~10,800 junctions).
 `data/` is git-ignored, so maps are never committed.
+
+### Your own plate photos
+
+The detector was trained on foreign plates (mAP50 0.799 on real Indian photos). To adapt it to your
+cameras, label a few hundred of your own photos in YOLO format, tag each as `day`, `night` or
+`two_row`, and fine-tune from the shipped weights; both models are then scored per condition.
+Full guide: [`FINETUNE.md`](FINETUNE.md).
+
+```bash
+.venv/bin/python -m scripts.own_photos my_photos/      # check labels, split by group -> data/own/
+.venv/bin/python -m scripts.finetune_own --epochs 30   # fine-tune + shipped vs fine-tuned table
+```
 
 ## Live demo
 
