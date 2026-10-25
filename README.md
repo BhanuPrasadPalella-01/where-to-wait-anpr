@@ -225,7 +225,9 @@ runs detector + OCR end to end with the weights in `weights/final/`.
   dashboard case list; two-suspect simulator experiment (reports/RESULTS.md section 10).
 * Done: any city — `--center/--radius` for the road graph and simulators, `$WTW_GRAPH` for the
   control room.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — fine-tune the plate detector on own photos.
+* Done: fine-tuning the plate detector on own photos — label checks, group split, per-condition
+  (day / night / two_row) shipped-vs-fine-tuned evaluation ([`FINETUNE.md`](FINETUNE.md)).
+* Next: see [`ROADMAP.md`](ROADMAP.md) — colour and vehicle-type check on the edge node.
 
 ## Data and ethics
 
