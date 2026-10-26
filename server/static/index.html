@@ -106,7 +106,7 @@
 <div id="feeds"></div>
 <aside>
   <header>
-    <h1>Where to Wait — Control Room</h1>
+    <h1>Where to Wait — Control Room <a href="/search" style="float:right;font-size:12px;color:var(--blue);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:3px 8px">🔎 Vehicle Search</a></h1>
     <div class="sub">Live interception planning from ANPR sightings · officer confirms every move</div>
   </header>
   <section>
@@ -214,6 +214,7 @@
 </aside>
 <script>
 const map = L.map('map', { zoomControl: true, preferCanvas: true });
+map.setView([17.385, 78.4867], 13);  // Hyderabad, until the first update fits the map to the cameras
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, className: 'dark-tiles', attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);

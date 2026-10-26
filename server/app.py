@@ -18,11 +18,13 @@ from pydantic import BaseModel, ValidationError
 from .control_room import ControlRoom
 from .db import Database
 from .messages import KEY_ENV, load_key
+from .search import DATA as SEARCH_DATA, SearchIndex
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="Where to Wait — control room")
 db = Database()  # data/control_room.db: registry, sightings, reads, routes, alerts, audit log
 room = ControlRoom(db=db, edge_key=load_key())  # set WTW_EDGE_KEY to require signed edge reads
+search = SearchIndex()  # Vehicle Search page over the four RoundaboutHD cameras
 state = {"speed": 5.0, "running": False, "show_truth": True}
 clients: set[WebSocket] = set()
 
@@ -84,6 +86,76 @@ class Settings(BaseModel):
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/search")
+def search_page():
+    return FileResponse(STATIC / "search.html")
+
+
+def _need_search():
+    if not search.ok:
+        return JSONResponse({"error": "run scripts/roundabout_fullpass.py first"}, status_code=404)
+
+
+@app.get("/vehicles")
+def vehicles_page():
+    return FileResponse(STATIC / "vehicles.html")
+
+
+@app.get("/api/search/overview")
+def search_overview():
+    return _need_search() or search.overview()
+
+
+@app.get("/api/search/meta")
+def search_meta():
+    return _need_search() or search.meta()
+
+
+@app.get("/api/search/video/{cam}")
+def search_video(cam: int):
+    path = SEARCH_DATA / "web" / f"cam{cam}.mp4"
+    if not path.exists():
+        return JSONResponse({"error": "run scripts/roundabout_web_video.py first"}, status_code=404)
+    return FileResponse(path, media_type="video/mp4")  # supports Range, so the players can seek
+
+
+@app.get("/api/search/boxes/{cam}")
+def search_boxes(cam: int, t0: float, t1: float):
+    return _need_search() or search.boxes(cam, t0, min(t1, t0 + 90))
+
+
+@app.get("/api/search/pick/{cam}")
+def search_pick(cam: int, t: float, x: float, y: float):
+    tid = search.pick(cam, t, x, y)
+    if tid is None:
+        return JSONResponse({"error": "no vehicle there"}, status_code=404)
+    return search.search_from(cam, tid)
+
+
+@app.get("/api/search/track/{cam}/{track}")
+def search_track(cam: int, track: int):
+    if track not in search.tracks.get(cam, {}):
+        return JSONResponse({"error": f"C{track} is not a track in camera {cam}"}, status_code=404)
+    return search.search_from(cam, track)
+
+
+@app.get("/api/search/label/{number}")
+def search_label(number: int):
+    return search.by_label(number)
+
+
+@app.get("/api/search/truth/{vid}")
+def search_truth(vid: int):
+    r = search.ground_truth(vid)
+    return r if r["stops"] else JSONResponse({"error": f"vehicle {vid} is not in the ground truth"}, status_code=404)
+
+
+@app.get("/api/search/crop/{cam}/{track}")
+def search_crop(cam: int, track: int):
+    jpg = search.crop(cam, track)
+    return Response(jpg, media_type="image/jpeg") if jpg else JSONResponse({"error": "no crop"}, status_code=404)
 
 
 @app.post("/api/demo/start")
