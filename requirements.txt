@@ -14,3 +14,4 @@ traci
 sumolib
 fastapi
 uvicorn[standard]
+cameratransform
