@@ -7,6 +7,12 @@ Mark an item `[x]` when it is done and add the date.
 - [x] (2026-10-17) **Live-mode release** — commit the finished live-camera work: `edge/camera_node.py`
       (video → YOLO26n plates → ByteTrack → OCR vote → hotlist → control room), `DEMO.md`,
       a README "Live demo" section, this roadmap, and `.claude/` in `.gitignore`.
+- [x] (2026-10-26) **Vehicle Search release** — commit the finished (uncommitted) Vehicle Search work: `/search` page
+      (four camera players, follow-cam, real-map route, check answer) and `/vehicles` page (every vehicle,
+      cameras passed, traffic flow, routes); `server/search.py`, `server/ground.py` (camera calibration →
+      ground paths, learned roundabout exits), endpoints in `server/app.py`, dashboard link,
+      `scripts/roundabout_web_video.py`, `cameratransform` in requirements, `tests/test_search.py`, and the
+      results section in `reports/roundabout/README.md`.
 
 ## Reliability
 - [x] (2026-10-18) **Control-room tests** — pytest tests for `server/control_room.py`: live case opening, first

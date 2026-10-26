@@ -41,3 +41,35 @@ Vehicle Tracking** (University of Bath and Starwit Technologies), [arXiv:2507.08
 data at [researchdata.bath.ac.uk/1574](https://researchdata.bath.ac.uk/1574/). The cameras were set up by the
 dataset authors so that no readable licence plate or face is recorded. These short clips are shown for
 academic demonstration with credit to the authors; they will be removed on request.
+
+## Vehicle Search and All vehicles pages
+
+With the control room running (`uvicorn server.app:app`), two pages work on this footage:
+
+- **`/search`**: click a vehicle in any of the four camera players (or type its track number, e.g. `C434`) and
+  the system follows it on its own: which way it left each roundabout, road travel time and appearance; no
+  plates, no answer key. It shows a zoomed follow-cam, the vehicle's real path through each roundabout on the
+  map, the road between cameras, and why the trail ends ("turned off onto a side road", "no confident
+  match"). *Check answer* compares every hand-off with the dataset's ground truth.
+- **`/vehicles`**: every annotated vehicle: how many cameras it passed, traffic between the cameras in each
+  direction, all routes on the map, and whether the system recovered each route by itself.
+
+Paths on the map: each box's bottom-centre goes through the camera calibration that ships with RoundaboutHD
+(`cameratransform` format) onto the road plane (`server/ground.py`). Whether a vehicle drove on east, west or
+turned off is a 7-nearest-neighbour vote over the even-numbered ground-truth vehicles (exit position and
+heading on the ground): 71–96 % correct on the odd-numbered vehicles, depending on the roundabout.
+
+Starting from any annotated vehicle (odd ids, held out), the hand-offs the page shows:
+
+| Search | Right | Wrong | Precision | Recall |
+|---|---|---|---|---|
+| always search the next camera (old) | 324 | 2,080 | 13 % | 44 % |
+| only where the vehicle drove on, match ≥ 0.5, candidate came from the right side | 281 | 337 | 45 % | 38 % |
+
+Most vehicles leave the four-camera corridor at a roundabout, so searching the next camera regardless picked
+some other vehicle. Match scores of 0.9 or more were right 71 % of the time, 0.8–0.9 55 %, below 0.8 about
+40 %; the page labels matches strong / likely / weak accordingly. Out of 287 vehicles seen by two or more
+cameras, the system recovered the whole route by itself for 71 (25 %).
+
+The players need browser-playable copies of the camera previews: `python scripts/roundabout_web_video.py N`
+for N = 1..4 (writes `data/roundabout/web/camN.mp4`).
