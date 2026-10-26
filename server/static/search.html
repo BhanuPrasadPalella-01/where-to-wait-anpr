@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vehicle Search — Where to Wait</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #161c23; --line: #2a333d; --text: #e6edf3; --muted: #8b98a5;
+    --blue: #4c9aff; --red: #ff5c5c; --amber: #f5b942; --green: #3fb950; --violet: #b18cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+  a { color: var(--blue); text-decoration: none; }
+  header { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 18px; border-bottom: 1px solid var(--line);
+           background: var(--panel); position: sticky; top: 0; z-index: 2000; }
+  h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 12px; }
+  input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px;
+                     font: 600 15px ui-monospace, SFMono-Regular, Menlo, monospace; width: 170px; letter-spacing: .5px; }
+  input[type=text]:focus { outline: none; border-color: var(--blue); }
+  button { background: #222b35; color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px;
+           font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #08111d; font-weight: 600; }
+  button:disabled { opacity: .4; cursor: default; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+  .seg button.on { background: #24303c; color: var(--text); }
+  .grow { flex: 1; }
+  main { padding: 14px 18px 30px; display: grid; gap: 14px; }
+  #status { padding: 9px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+  #status b { color: var(--green); }
+  #status.warn { border-color: #5d4a1d; } #status.err { border-color: #5d1d1d; color: #ffb3b3; }
+
+  /* four separate camera players, in journey order */
+  #cams { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .cam { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
+  .cam.live { border-color: var(--green); box-shadow: 0 0 0 2px #3fb95055; }
+  .cam.dim { opacity: .55; }
+  .cam .top { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 12.5px; border-bottom: 1px solid var(--line); }
+  .cam .top b { font-size: 13px; }
+  .cam .order { background: #24303c; color: var(--muted); border-radius: 5px; padding: 1px 6px; font-weight: 700; font-size: 11px; }
+  .cam.live .order { background: var(--green); color: #07150a; }
+  .stage { position: relative; aspect-ratio: 16 / 9; background: #000; cursor: crosshair; }
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stage .tag { position: absolute; left: 8px; bottom: 8px; background: #000b; padding: 2px 7px; border-radius: 5px;
+                font: 12px ui-monospace, Menlo, monospace; pointer-events: none; }
+  .cam .info { padding: 8px 10px; font-size: 12.5px; min-height: 64px; display: grid; gap: 3px; }
+  .cam .info .k { color: var(--muted); }
+  .verdict { font-weight: 700; display: none; }
+  body.check .verdict { display: inline; }
+  .ok { color: var(--green); } .bad { color: var(--red); }
+
+  #lower { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .card > .top { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  #follow { position: relative; aspect-ratio: 16 / 9; background: #05080b; }
+  #follow canvas { width: 100%; height: 100%; display: block; }
+  #followMsg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+               gap: 8px; color: var(--muted); text-align: center; padding: 20px; }
+  #followMsg b { color: var(--text); font-size: 18px; }
+  #map { height: 100%; min-height: 360px; }
+  .leaflet-container { background: #0b0f13; }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5); }
+  .cam-pin { background: #24303c; color: #fff; border: 2px solid #fff; border-radius: 7px; font: 700 12px system-ui;
+             display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 6px #0008; }
+  .cam-pin.hit { background: var(--green); color: #07150a; }
+  .car-pin { background: var(--red); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 7px #ff5c5c44; }
+
+  #timeline { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+  #scrub { flex: 1; accent-color: var(--blue); }
+  #clock { font: 13px ui-monospace, Menlo, monospace; min-width: 70px; text-align: right; }
+  #stops { display: grid; gap: 8px; padding: 10px 12px; }
+  .stop { display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: start; padding: 8px; border: 1px solid var(--line);
+          border-radius: 8px; background: var(--bg); }
+  .stop img { width: 74px; height: 56px; object-fit: cover; border-radius: 5px; background: #000; }
+  .stop .alts { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+  .stop .alts span { cursor: pointer; border-bottom: 1px dotted var(--muted); margin-right: 6px; }
+  .stop .alts span.ok { color: var(--muted); }
+  body.check .stop .alts span.ok { color: var(--green); border-color: var(--green); }
+  .drive { color: var(--muted); font-size: 12px; padding-left: 84px; }
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font: 12px ui-monospace, Menlo, monospace; padding: 3px 8px; border-radius: 12px; }
+  .legend { color: var(--muted); font-size: 11.5px; }
+  .legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin: 0 4px 0 10px; }
+
+  .conf { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+  .c-hi { background: #12361b; color: #8ef0a4; } .c-mid { background: #3a3014; color: #f5d27a; } .c-lo { background: #3a1414; color: #ffb3b3; }
+  .endnote { color: var(--amber); font-size: 12.5px; padding: 4px 2px; }
+  .pick { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .pick button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; }
+  .pick img { width: 110px; height: 70px; object-fit: cover; border-radius: 5px; }
+  .arrow { color: #f5b942; font-size: 14px; text-shadow: 0 0 3px #000; }
+  .offroad { color: #f5b942; font: 700 11px system-ui; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+  @media (max-width: 1100px) { #cams { grid-template-columns: repeat(2, minmax(0, 1fr)); } #lower { grid-template-columns: 1fr; } }
+  @media (max-width: 620px) { #cams { grid-template-columns: 1fr; } header { padding: 10px 16px; } main { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <a href="/" title="Back to the control room">←</a>
+  <h1>Vehicle Search</h1>
+  <span class="sub">4 real cameras · Carmel, Indiana · RoundaboutHD</span>
+  <a href="/vehicles" style="border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12.5px">▦ All vehicles</a>
+  <span class="grow"></span>
+  <div class="seg" id="mode">
+    <button data-mode="system" class="on" title="The system finds the vehicle in the other cameras by itself">System search</button>
+    <button data-mode="truth" title="Look a dataset vehicle id up in the answer key">Ground-truth lookup</button>
+  </div>
+  <input type="text" id="q" placeholder="C1069" autocomplete="off" spellcheck="false">
+  <button class="primary" id="go">Search</button>
+  <button id="play" disabled>▶ Play journey</button>
+  <label class="sub"><input type="checkbox" id="check"> Check answer</label>
+</header>
+
+<main>
+  <div id="status">Click any vehicle in any camera, or type its track number (e.g. <b>C1069</b>). The system then finds the same vehicle in the other three cameras on its own.</div>
+
+  <div id="cams"></div>
+
+  <div id="lower">
+    <div class="card">
+      <div class="top"><b>Follow-cam</b><span class="sub" id="followSub">zoomed on the selected vehicle</span></div>
+      <div id="follow"><canvas id="followCv" width="960" height="540"></canvas>
+        <div id="followMsg"><b>No vehicle selected</b><span>Pick one to follow it from camera to camera.</span></div></div>
+      <div id="timeline"><button id="pp">▶</button><input type="range" id="scrub" min="0" max="600" step="0.1" value="0"><span id="clock">0:00.0</span></div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column">
+      <div class="top"><b>Route on the real road map</b><span class="legend"><i style="background:#f5b942"></i>its path through each roundabout<i style="background:var(--green)"></i>road between cameras<i style="background:var(--red);height:10px;width:10px;border-radius:50%"></i>vehicle</span></div>
+      <div id="map" style="flex:1"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top"><b>Journey</b><span class="sub" id="jsub">—</span><span class="grow"></span><span class="sub">examples:</span><div class="examples" id="examples"></div></div>
+    <div id="stops"><div class="sub">No search yet.</div></div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const SRC_W = 1280;                       // track boxes are in 1280-wide pixels
+const TYPE_COL = { car: '#4cc8ff', truck: '#3cb4e6', bus: '#ff7a3c', motorcycle: '#e65ae6' };
+let META = null, mode = 'system', result = null, active = null;
+const cams = {};                          // cam -> {video, canvas, el, chunks: Map, sel: {frames, boxes}}
+let journey = null;                       // playback state machine
+
+// ------------------------------------------------------------------ map
+const map = L.map('map', { zoomControl: true, attributionControl: true });
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, className: 'dark-tiles', attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+const camPins = {}, routeLayer = L.layerGroup().addTo(map);
+const car = L.marker([0, 0], { icon: L.divIcon({ className: 'car-pin', iconSize: [14, 14] }), opacity: 0 }).addTo(map);
+
+// ------------------------------------------------------------------ helpers
+const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+const api = async (u) => { const r = await fetch(u); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; };
+function status(html, cls = '') { const s = $('#status'); s.innerHTML = html; s.className = cls; }
+const fps = () => META.fps;
+
+async function boxesAt(c, t) {
+  const C = cams[c], k = Math.floor(t / 20);
+  if (!C.chunks.has(k)) {
+    C.chunks.set(k, null);
+    const list = await api(`/api/search/boxes/${c}?t0=${k * 20}&t1=${k * 20 + 20}`);
+    const byF = new Map();
+    for (const tr of list) for (const [f, b] of tr.fb) { if (!byF.has(f)) byF.set(f, []); byF.get(f).push([tr.track, tr.type, b]); }
+    C.chunks.set(k, byF);
+  }
+  const byF = C.chunks.get(k);
+  return byF ? (byF.get(Math.round(t * fps())) || []) : [];
+}
+
+function selBox(c, t) {
+  // the selected vehicle's box at time t, drawn through short detection gaps (up to 1 s)
+  const s = cams[c].sel; if (!s) return null;
+  const f = t * fps(), F = s.frames;
+  if (f < F[0] - 1 || f > F[F.length - 1] + 1) return null;
+  let lo = 0, hi = F.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (F[m] <= f) lo = m; else hi = m; }
+  if (F[lo] > f) return s.boxes[lo];
+  if (F[hi] - F[lo] > fps() && Math.abs(f - F[lo]) > 1 && Math.abs(F[hi] - f) > 1) return null;
+  const w = F[hi] === F[lo] ? 0 : Math.min(1, (f - F[lo]) / (F[hi] - F[lo]));
+  return s.boxes[lo].map((u, i) => u + w * (s.boxes[hi][i] - u));
+}
+
+// ------------------------------------------------------------------ build the page
+async function init() {
+  try { META = await api('/api/search/meta'); }
+  catch (e) { status(`Search data missing: ${e.message}`, 'err'); return; }
+  for (const cm of META.cameras) {
+    const el = document.createElement('div');
+    el.className = 'cam'; el.dataset.cam = cm.cam;
+    el.innerHTML = `<div class="top"><span class="order">CAM ${cm.cam}</span><b>${cm.name}</b><span class="grow"></span>
+        <span class="sub">${cm.tracks} vehicles</span></div>
+      <div class="stage"><video src="/api/search/video/${cm.cam}" muted playsinline preload="auto"></video><canvas></canvas>
+        <span class="tag">0:00.0</span></div>
+      <div class="info"><span class="k">Click a vehicle to search for it.</span></div>`;
+    $('#cams').appendChild(el);
+    const C = cams[cm.cam] = { el, video: el.querySelector('video'), canvas: el.querySelector('canvas'),
+                               tag: el.querySelector('.tag'), info: el.querySelector('.info'), chunks: new Map(), sel: null };
+    C.canvas.addEventListener('click', ev => clickPick(cm.cam, ev));
+    camPins[cm.cam] = L.marker([cm.lat, cm.lon], { icon: L.divIcon({ className: 'cam-pin', html: cm.cam, iconSize: [24, 24] }) })
+      .bindTooltip(`Camera ${cm.cam} — ${cm.name}`).addTo(map);
+  }
+  map.fitBounds(META.cameras.map(c => [c.lat, c.lon]), { padding: [40, 40] });
+  for (const v of META.examples) {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = `vehicle ${v}`;
+    b.title = 'ground-truth lookup of a vehicle that crosses all 4 cameras';
+    b.onclick = () => { setMode('truth'); $('#q').value = v; go(); };
+    $('#examples').appendChild(b);
+  }
+  requestAnimationFrame(draw);
+  const q = new URLSearchParams(location.search);
+  if (q.get('v')) { setMode('truth'); $('#q').value = q.get('v'); go(); }
+  else if (q.get('cam') && q.get('track')) searchTrack(+q.get('cam'), +q.get('track'));
+}
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  $('#q').placeholder = m === 'system' ? 'C1069' : 'vehicle id, e.g. 654';
+}
+document.querySelectorAll('#mode button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+$('#check').onchange = e => document.body.classList.toggle('check', e.target.checked);
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+$('#go').onclick = go;
+
+async function go() {
+  const raw = $('#q').value.trim().toUpperCase();
+  if (!raw) return;
+  try {
+    if (mode === 'truth' || raw.startsWith('V')) {
+      const v = parseInt(raw.replace(/\D/g, ''), 10);
+      show(await api(`/api/search/truth/${v}`));
+      return;
+    }
+    if (/[A-Z]{2}\d/.test(raw) && !/^C\d+$/.test(raw)) {
+      status(`<b>${raw}</b> looks like a number plate. These US cameras are too far away to read plates — for plate tracking use the <a href="/">live control room</a>. Here, search by track number (C…) or click a vehicle.`, 'warn');
+      return;
+    }
+    const n = parseInt(raw.replace(/\D/g, ''), 10);
+    const where = await api(`/api/search/label/${n}`);
+    if (!where.length) { status(`No track C${n} in any camera.`, 'err'); return; }
+    if (where.length > 1) {
+      status(`Each camera numbers its own vehicles, so <b>C${n}</b> is a different vehicle in ${where.length} cameras. Which one?<div class="pick">` +
+        where.map(w => `<button onclick="searchTrack(${w.cam},${w.track})"><img src="/api/search/crop/${w.cam}/${w.track}" alt="">camera ${w.cam}</button>`).join('') + '</div>', 'warn');
+      return;
+    }
+    searchTrack(where[0].cam, where[0].track);
+  } catch (e) { status(e.message, 'err'); }
+}
+
+async function searchTrack(c, tr) {
+  setMode('system');
+  try { show(await api(`/api/search/track/${c}/${tr}`)); } catch (e) { status(e.message, 'err'); }
+}
+
+async function clickPick(c, ev) {
+  const C = cams[c], r = C.canvas.getBoundingClientRect();
+  const x = (ev.clientX - r.left) / r.width * SRC_W, y = (ev.clientY - r.top) / r.height * (SRC_W * 9 / 16);
+  setMode('system');
+  try {
+    status('Searching the other cameras…');
+    show(await api(`/api/search/pick/${c}?t=${C.video.currentTime.toFixed(2)}&x=${x.toFixed(0)}&y=${y.toFixed(0)}`));
+  } catch (e) { status(`${e.message} — click directly on a boxed vehicle.`, 'warn'); }
+}
+
+// ------------------------------------------------------------------ show a result
+async function show(r) {
+  stopJourney();
+  result = r;
+  for (const c in cams) { cams[c].sel = null; cams[c].el.classList.remove('live', 'dim'); }
+  const order = r.stops.map(s => s.cam);
+  // load each picked track's full box path for the follow-cam
+  await Promise.all(r.stops.map(async s => {
+    const list = await api(`/api/search/boxes/${s.cam}?t0=${s.t_first - 0.2}&t1=${s.t_last + 0.2}`);
+    const me = list.find(x => x.track === s.track);
+    cams[s.cam].sel = me ? { frames: me.fb.map(p => p[0]), boxes: me.fb.map(p => p[1]), stop: s } : null;
+  }));
+  // reorder the four players to follow the journey; cameras it never reached go last, dimmed
+  for (const c of [...order, ...[1, 2, 3, 4].filter(c => !order.includes(c))]) $('#cams').appendChild(cams[c].el);
+  for (const c in cams) {
+    const s = r.stops.find(s => s.cam == c), C = cams[c];
+    const i = order.indexOf(+c);
+    C.el.querySelector('.order').textContent = i >= 0 ? `${i + 1} · CAM ${c}` : `CAM ${c}`;
+    if (!s) {
+      const e = Object.values(r.ends || {}).find(e => e.towards == c);
+      C.el.classList.add('dim');
+      C.info.innerHTML = `<span class="k">${e ? e.why[0].toUpperCase() + e.why.slice(1) + '.' : 'The vehicle did not pass this camera.'}</span>`;
+      continue;
+    }
+    const how = s.score == null ? (r.mode === 'system' ? 'starting point — you picked this one' : 'from the answer key')
+                                : `${badge(s.score)} · score ${s.score.toFixed(2)} · best of ${s.candidates}`;
+    const v = s.correct == null ? '' : s.correct ? '<span class="verdict ok">✓ correct</span>' : '<span class="verdict bad">✗ wrong vehicle</span>';
+    C.info.innerHTML = `<span><b>${s.label}</b> · ${s.type} · seen ${fmt(s.t_first)}–${fmt(s.t_last)}</span>
+                        <span class="k">${how}</span><span>${v}</span>`;
+  }
+  // journey list
+  const parts = [];
+  r.stops.forEach((s, i) => {
+    if (i) {
+      const seg = r.route[i - 1];
+      parts.push(`<div class="drive">↓ drove camera ${seg.from} → ${seg.to}: ${seg.drive_s.toFixed(0)} s on the road</div>`);
+    }
+    const alts = (s.alternatives || []).map(a =>
+      `<span class="${a.correct ? 'ok' : ''}" title="score ${a.score}" onclick="searchTrack(${s.cam},${a.track})">${a.label} ${a.score.toFixed(2)}</span>`).join('');
+    const v = s.correct == null ? '' : s.correct ? ' <span class="verdict ok">✓</span>' : ' <span class="verdict bad">✗</span>';
+    parts.push(`<div class="stop"><img src="/api/search/crop/${s.cam}/${s.track}" alt="">
+      <div><b>Camera ${s.cam}</b> · ${s.label}${v} · ${fmt(s.t_first)}
+        <div class="sub">${s.score == null ? (r.mode === 'system' ? 'starting point (you picked this one)' : 'from the answer key')
+                                            : `${badge(s.score)} · score ${s.score.toFixed(2)} · ${s.candidates} candidates arrived at the right time from the right side`}</div>
+        ${alts ? `<div class="alts">next best: ${alts}</div>` : ''}</div></div>`);
+  });
+  const endNote = (e, when) => e ? `<div class="endnote">${when === 'before' ? '⤒ Before' : '⤓ After'} camera ${e.cam}: ${e.why}.</div>` : '';
+  $('#stops').innerHTML = endNote(r.ends?.before, 'before') + parts.join('') + endNote(r.ends?.after, 'after');
+  const nOk = r.stops.filter(s => s.correct).length;
+  $('#jsub').textContent = `${r.stops.length} cameras · ${fmt(r.stops[0].t_first)} → ${fmt(r.stops[r.stops.length - 1].t_last)}`;
+  // map route
+  routeLayer.clearLayers();
+  for (const c in camPins) camPins[c].getElement()?.classList.toggle('hit', order.includes(+c));
+  r.stops.forEach(s => {
+    if (s.path.length < 2) return;
+    const ll = s.path.map(([f, lon, lat]) => [lat, lon]);
+    L.polyline(ll, { color: '#f5b942', weight: 5, opacity: .95 }).addTo(routeLayer)
+      .bindTooltip(`camera ${s.cam}: where ${s.label} drove through the roundabout (projected from the video)`, { sticky: true });
+    L.circleMarker(ll[0], { radius: 4, color: '#f5b942', fillOpacity: 1 }).addTo(routeLayer).bindTooltip(`camera ${s.cam}: came in here`);
+    L.marker(ll[ll.length - 1], { icon: L.divIcon({ className: 'arrow', html: '➤', iconSize: [16, 16] }) }).addTo(routeLayer)
+      .bindTooltip(`camera ${s.cam}: left here`);
+  });
+  for (const e of Object.values(r.ends || {})) {
+    const s = r.stops.find(s => s.cam === e.cam);
+    if (!s || !s.path.length || !e.why.includes('side road')) continue;
+    const p = e.why.startsWith('turned') ? s.path[s.path.length - 1] : s.path[0];
+    L.marker([p[2], p[1]], { icon: L.divIcon({ className: 'offroad', html: e.why.startsWith('turned') ? 'turned off ↗' : '↘ came from side road', iconSize: [120, 18] }) }).addTo(routeLayer);
+  }
+  r.route.forEach((seg, i) => {
+    const a = r.stops[i].path, b = r.stops[i + 1].path;
+    const ll = [...(a.length ? [[a[a.length - 1][2], a[a.length - 1][1]]] : []), ...seg.lonlat.map(([lon, lat]) => [lat, lon]),
+                ...(b.length ? [[b[0][2], b[0][1]]] : [])];
+    L.polyline(ll, { color: '#3fb950', weight: 9, opacity: .18 }).addTo(routeLayer);
+    L.polyline(ll, { color: '#3fb950', weight: 4, opacity: .95 }).addTo(routeLayer)
+      .bindTooltip(`camera ${seg.from} → ${seg.to} · ${seg.drive_s.toFixed(0)} s`, { sticky: true });
+  });
+  map.invalidateSize();
+  map.fitBounds(L.featureGroup([...routeLayer.getLayers(), ...order.map(c => camPins[c])]).getBounds(), { padding: [40, 40] });
+  $('#play').disabled = false;
+  const first = r.stops[0];
+  if (r.mode === 'system') {
+    const dir = order.length > 1 ? ` · heading ${order[1] > order[0] ? 'east' : 'west'}: camera ${order.join(' → ')}` : '';
+    status(`Following <b>${r.stops.find(s => s.score == null)?.label}</b> from camera ${r.source.cam}: seen at <b>${r.stops.length}</b> camera(s)${dir}. ` +
+      `Found by which way it left each roundabout, road travel time and appearance — no plate, no answer key.` +
+      `<span class="verdict"> &nbsp;Answer key: ${r.truth_cams ? `it really passed camera ${r.truth_cams.join(' → ')}; ${nOk - 1} of ${r.stops.length - 1} hand-offs right` : 'this track is not in the answer key'}.</span> Press <b>▶ Play journey</b>.`);
+  } else {
+    status(`Ground-truth lookup of dataset vehicle <b>${r.vehicle}</b>: the answer key lists it in ${r.stops.length} camera(s). ` +
+      `To see what the <i>system</i> finds by itself, click it in camera ${first.cam} or switch to System search.`);
+  }
+  seekAll(Math.max(0, first.t_first - 1));
+}
+
+// ------------------------------------------------------------------ playback
+function seekAll(t) { for (const c in cams) cams[c].video.currentTime = t; }
+function playAll(on, rate = 1) {
+  for (const c in cams) { const v = cams[c].video; v.playbackRate = rate; on ? v.play().catch(() => {}) : v.pause(); }
+  $('#pp').textContent = on ? '⏸' : '▶';
+}
+$('#pp').onclick = () => { stopJourney(); playAll(cams[1].video.paused); };
+$('#scrub').oninput = e => { stopJourney(); seekAll(+e.target.value); };
+
+function stopJourney() { journey = null; $('#play').textContent = '▶ Play journey'; }
+$('#play').onclick = () => {
+  if (journey) { stopJourney(); playAll(false); return; }
+  journey = { i: 0, phase: 'view', drive0: 0 };
+  flyTo(result.stops[0]);
+  seekAll(Math.max(0, result.stops[0].t_first - 1.5));
+  playAll(true, 1.5);
+  $('#play').textContent = '⏹ Stop';
+};
+
+function flyTo(s) {
+  const p = s.path.length ? s.path[Math.floor(s.path.length / 2)] : null;
+  map.flyTo(p ? [p[2], p[1]] : camPins[s.cam].getLatLng(), 17, { duration: .8 });
+}
+const CONF = [[0.9, 'strong match', 'c-hi', 71], [0.8, 'likely match', 'c-mid', 55], [0, 'weak match', 'c-lo', 40]];
+function badge(score) {
+  const [, name, cls, pct] = CONF.find(([lo]) => score >= lo);
+  return `<span class="conf ${cls}" title="In testing on held-out vehicles, ${name}es were the right vehicle about ${pct}% of the time">${name}</span>`;
+}
+
+function stepJourney(t, now) {
+  const S = result.stops, s = S[journey.i];
+  if (journey.phase === 'view' && t > s.t_last + 1) {
+    if (journey.i === S.length - 1) { stopJourney(); playAll(false); return; }
+    journey.phase = 'drive'; journey.drive0 = now; playAll(false);
+    map.flyToBounds(L.latLngBounds([camPins[S[journey.i].cam].getLatLng(), camPins[S[journey.i + 1].cam].getLatLng()]), { padding: [60, 60], duration: .8 });
+  } else if (journey.phase === 'drive' && now - journey.drive0 > 2600) {
+    journey.i++; journey.phase = 'view';
+    flyTo(S[journey.i]);
+    seekAll(Math.max(0, S[journey.i].t_first - 1.5));
+    playAll(true, 1.5);
+  }
+}
+
+function along(lonlat, w) {
+  // point at fraction w of a polyline's length
+  const ll = lonlat.map(([lon, lat]) => [lat, lon]);
+  const d = [0]; for (let i = 1; i < ll.length; i++) d.push(d[i - 1] + Math.hypot(ll[i][0] - ll[i - 1][0], ll[i][1] - ll[i - 1][1]));
+  const target = w * d[d.length - 1];
+  for (let i = 1; i < ll.length; i++) if (d[i] >= target) {
+    const u = (target - d[i - 1]) / ((d[i] - d[i - 1]) || 1);
+    return [ll[i - 1][0] + u * (ll[i][0] - ll[i - 1][0]), ll[i - 1][1] + u * (ll[i][1] - ll[i - 1][1])];
+  }
+  return ll[ll.length - 1];
+}
+
+// ------------------------------------------------------------------ the render loop
+const follow = $('#followCv'), fctx = follow.getContext('2d');
+let fbox = null;   // smoothed follow-cam window, in video pixels
+async function draw(now) {
+  try { await frame(now); } catch (e) { console.error(e); }
+  requestAnimationFrame(draw);
+}
+async function frame(now) {
+  const master = cams[result && journey ? result.stops[journey.i].cam : 1]?.video || cams[1].video;
+  const t = master.currentTime;
+  // keep the four players on one clock
+  for (const c in cams) { const v = cams[c].video; if (v !== master && !v.seeking && v.readyState >= 1 && Math.abs(v.currentTime - t) > 0.35) v.currentTime = t; }
+  $('#scrub').value = t; $('#clock').textContent = fmt(t);
+  if (journey) stepJourney(t, now);
+
+  let liveCam = null;
+  for (const c in cams) {
+    const C = cams[c], cv = C.canvas, r = cv.getBoundingClientRect();
+    if (cv.width !== Math.round(r.width) || cv.height !== Math.round(r.height)) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
+    const ctx = cv.getContext('2d'), k = cv.width / SRC_W, tc = C.video.currentTime;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    C.tag.textContent = fmt(tc);
+    const sb = selBox(c, tc), selTrack = C.sel?.stop.track;
+    const list = await boxesAt(c, tc);
+    ctx.lineWidth = 1;
+    for (const [tr, type, b] of list) {
+      if (tr === selTrack && sb) continue;
+      ctx.strokeStyle = (TYPE_COL[type] || '#999') + (result ? '66' : 'cc');
+      ctx.strokeRect(b[0] * k, b[1] * k, (b[2] - b[0]) * k, (b[3] - b[1]) * k);
+      if (!result) { ctx.fillStyle = TYPE_COL[type] || '#999'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillText(`C${tr}`, b[0] * k, b[1] * k - 2); }
+    }
+    C.el.classList.toggle('live', !!sb);
+    if (sb) {
+      liveCam = liveCam || +c;
+      const [x1, y1, x2, y2] = sb.map(v => v * k);
+      ctx.lineWidth = 3; ctx.strokeStyle = '#3fb950'; ctx.strokeRect(x1 - 3, y1 - 3, x2 - x1 + 6, y2 - y1 + 6);
+      const label = C.sel.stop.label + (C.sel.stop.score != null ? ` ${C.sel.stop.score.toFixed(2)}` : '');
+      ctx.font = 'bold 12px system-ui'; const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle = '#3fb950'; ctx.fillRect(x1 - 3, Math.max(0, y1 - 22), w, 18);
+      ctx.fillStyle = '#07150a'; ctx.fillText(label, x1 + 2, Math.max(13, y1 - 9));
+    }
+  }
+
+  // follow-cam: a smoothed, zoomed window around the selected vehicle in whichever camera sees it
+  const msg = $('#followMsg');
+  if (liveCam) {
+    const C = cams[liveCam], v = C.video, sb = selBox(liveCam, v.currentTime), s = v.videoWidth / SRC_W;
+    const cx = (sb[0] + sb[2]) / 2 * s, cy = (sb[1] + sb[3]) / 2 * s;
+    let w = Math.max(220, (sb[2] - sb[0]) * s * 3.2, (sb[3] - sb[1]) * s * 3.2 * 16 / 9);
+    w = Math.min(w, v.videoWidth); const h = w * 9 / 16;
+    const want = [Math.min(Math.max(cx - w / 2, 0), v.videoWidth - w), Math.min(Math.max(cy - h / 2, 0), v.videoHeight - h), w, h];
+    fbox = fbox && fbox.cam === liveCam ? { cam: liveCam, b: fbox.b.map((u, i) => u + 0.18 * (want[i] - u)) } : { cam: liveCam, b: want };
+    fctx.drawImage(v, ...fbox.b, 0, 0, follow.width, follow.height);
+    const kk = follow.width / fbox.b[2];
+    fctx.lineWidth = 3; fctx.strokeStyle = '#3fb950';
+    fctx.strokeRect((sb[0] * s - fbox.b[0]) * kk, (sb[1] * s - fbox.b[1]) * kk, (sb[2] - sb[0]) * s * kk, (sb[3] - sb[1]) * s * kk);
+    fctx.fillStyle = '#000b'; fctx.fillRect(10, 10, 300, 30);
+    fctx.fillStyle = '#e6edf3'; fctx.font = '600 15px system-ui';
+    fctx.fillText(`Camera ${liveCam} · ${C.sel.stop.label} · ${(v.videoWidth / fbox.b[2]).toFixed(1)}× zoom`, 20, 31);
+    msg.style.display = 'none';
+    $('#followSub').textContent = `camera ${liveCam} · ${fmt(v.currentTime)}`;
+    const P = C.sel.stop.path, f = v.currentTime * fps();
+    if (P.length) {
+      let j = P.findIndex(p => p[0] >= f); if (j < 0) j = P.length - 1;
+      const a = P[Math.max(0, j - 1)], b = P[j], w = b[0] === a[0] ? 0 : Math.min(1, Math.max(0, (f - a[0]) / (b[0] - a[0])));
+      car.setLatLng([a[2] + w * (b[2] - a[2]), a[1] + w * (b[1] - a[1])]).setOpacity(1);
+    } else car.setLatLng(camPins[liveCam].getLatLng()).setOpacity(1);
+  } else if (result) {
+    fbox = null;
+    fctx.fillStyle = '#05080b'; fctx.fillRect(0, 0, follow.width, follow.height);
+    msg.style.display = 'flex';
+    // where is it now? between two cameras, before the first, or after the last
+    const S = result.stops;
+    let i = S.findIndex(s => s.t_first > t);
+    if (journey && journey.phase === 'drive') {
+      const seg = result.route[journey.i], w = Math.min(1, (now - journey.drive0) / 2600);
+      car.setLatLng(along(seg.lonlat, w)).setOpacity(1);
+      msg.innerHTML = `<b>On the road: camera ${seg.from} → camera ${seg.to}</b><span>${seg.drive_s.toFixed(0)} s of driving, fast-forwarded · route reconstructed on OpenStreetMap roads</span>`;
+    } else if (i > 0) {
+      const seg = result.route[i - 1], a = S[i - 1], b = S[i];
+      const w = Math.min(1, Math.max(0, (t - a.t_last) / (b.t_first - a.t_last)));
+      car.setLatLng(along(seg.lonlat, w)).setOpacity(1);
+      msg.innerHTML = `<b>Between cameras ${a.cam} and ${b.cam}</b><span>expected at camera ${b.cam} in ${(b.t_first - t).toFixed(0)} s</span>`;
+    } else {
+      car.setOpacity(i === 0 ? 0 : 1);
+      if (i < 0) car.setLatLng(camPins[S[S.length - 1].cam].getLatLng());
+      msg.innerHTML = i === 0 ? `<b>Not on camera yet</b><span>first seen at camera ${S[0].cam} at ${fmt(S[0].t_first)}</span>`
+                              : `<b>Left the last camera</b><span>last seen at camera ${S[S.length - 1].cam} at ${fmt(S[S.length - 1].t_last)}</span>`;
+    }
+    $('#followSub').textContent = 'zoomed on the selected vehicle';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

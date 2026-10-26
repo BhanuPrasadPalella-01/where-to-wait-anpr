@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All Vehicles — Where to Wait</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #161c23; --line: #2a333d; --text: #e6edf3; --muted: #8b98a5; --blue: #4c9aff;
+    --east: #3987e5; --west: #d95926; --count: #9085e9;
+    --good: #0ca30c; --warn: #fab219; --crit: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+  a { color: var(--blue); text-decoration: none; }
+  header { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 18px; border-bottom: 1px solid var(--line);
+           background: var(--panel); position: sticky; top: 0; z-index: 2000; }
+  h1 { font-size: 16px; margin: 0; }
+  h2 { font-size: 13px; margin: 0; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .grow { flex: 1; }
+  main { padding: 14px 18px 30px; display: grid; gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .card > .top { padding: 9px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .body { padding: 12px; }
+  #tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .tile b { display: block; font-size: 28px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .tile span { color: var(--muted); font-size: 12px; }
+  #row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 14px; }
+  #bars .bar { display: grid; grid-template-columns: 92px 1fr 44px; gap: 10px; align-items: center; padding: 5px 4px; border-radius: 6px; cursor: pointer; }
+  #bars .bar:hover, #bars .bar.on { background: #1f2730; }
+  #bars .track { height: 18px; position: relative; }
+  #bars .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--count); border-radius: 0 4px 4px 0; }
+  #bars .n { text-align: right; font-variant-numeric: tabular-nums; }
+  #flow svg { width: 100%; height: auto; display: block; }
+  #flow .lbl { fill: var(--text); font: 600 13px system-ui; }
+  #flow .num { fill: var(--text); font: 600 12px system-ui; }
+  #flow .muted { fill: var(--muted); font: 11px system-ui; }
+  .legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; }
+  .legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  #row3 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+  #row3 > .card:first-child { display: flex; flex-direction: column; }
+  #map { flex: 1; min-height: 460px; }
+  .leaflet-container { background: #0b0f13; }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.5); }
+  .cam-pin { background: #24303c; color: #fff; border: 2px solid #fff; border-radius: 7px; font: 700 12px system-ui;
+             display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 6px #0008; }
+  #detail { padding: 12px; display: grid; gap: 10px; align-content: start; }
+  #detail .crops { display: flex; gap: 6px; flex-wrap: wrap; }
+  #detail figure { margin: 0; width: calc(50% - 3px); }
+  #detail img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; background: #000; display: block; }
+  #detail figcaption { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { background: transparent; color: var(--muted); border: 0; padding: 6px 10px; font: inherit; cursor: pointer; }
+  .seg button.on { background: #24303c; color: var(--text); }
+  input[type=search] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font: inherit; width: 140px; }
+  .tablewrap { max-height: 520px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+       padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid #1f2730; white-space: nowrap; }
+  tr:hover td, tr.sel td { background: #1c242d; }
+  tr { cursor: pointer; }
+  .chips { display: inline-flex; gap: 3px; }
+  .chip { width: 22px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center;
+          font: 700 11px system-ui; background: #1f2730; color: #4a5560; }
+  .chip.on { color: #fff; }
+  .chip.east { background: var(--east); } .chip.west { background: var(--west); } .chip.one, .chip.mixed { background: #5b6672; }
+  .dir { display: inline-flex; gap: 5px; align-items: center; }
+  .dir i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .st { display: inline-flex; gap: 5px; align-items: center; font-weight: 600; }
+  .st.good { color: var(--good); } .st.warn { color: var(--warn); } .st.crit { color: #ff7b7b; } .st.na { color: var(--muted); font-weight: 400; }
+  #tip { position: fixed; pointer-events: none; z-index: 3000; background: #0b0f13f0; border: 1px solid var(--line); border-radius: 7px;
+         padding: 6px 9px; font-size: 12px; display: none; max-width: 280px; }
+  @media (max-width: 1000px) { #row2, #row3 { grid-template-columns: 1fr; } #tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { header, main { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <a href="/search">← Vehicle Search</a>
+  <h1>All vehicles</h1>
+  <span class="sub">every vehicle in the 10-minute recording · 4 real cameras on East 96th Street, Carmel, Indiana</span>
+  <span class="grow"></span>
+  <a href="/">Control room</a>
+</header>
+
+<main>
+  <div id="tiles"></div>
+
+  <div id="row2">
+    <div class="card">
+      <div class="top"><h2>How many cameras each vehicle passed</h2><span class="sub">click a bar to filter the list</span></div>
+      <div class="body" id="bars"></div>
+    </div>
+    <div class="card">
+      <div class="top"><h2>Traffic between the cameras</h2><span class="grow"></span>
+        <div class="legend"><span><i style="background:var(--east)"></i>eastbound</span><span><i style="background:var(--west)"></i>westbound</span></div></div>
+      <div class="body" id="flow"></div>
+    </div>
+  </div>
+
+  <div id="row3">
+    <div class="card">
+      <div class="top"><h2>Routes on the real road map</h2><span class="sub" id="mapsub">all vehicles in the list · line width = number of vehicles</span></div>
+      <div id="map"></div>
+    </div>
+    <div class="card">
+      <div class="top"><h2>Selected vehicle</h2></div>
+      <div id="detail"><span class="sub">Click a vehicle in the list to see its route, its photo at each camera, and whether the system found that route by itself.</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <div class="seg" id="fCount"><button data-v="all" class="on">all</button><button data-v="1">1 camera</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">all 4</button></div>
+      <div class="seg" id="fDir"><button data-v="all" class="on">any direction</button><button data-v="east">eastbound</button><button data-v="west">westbound</button></div>
+      <div class="seg" id="fSys"><button data-v="all" class="on">any result</button><button data-v="full">✓ found by system</button><button data-v="part">◐ partly</button><button data-v="wrong">✗ wrong pick</button></div>
+      <input type="search" id="fId" placeholder="vehicle id">
+      <span class="grow"></span><span class="sub" id="count"></span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th data-k="vehicle">Vehicle</th><th data-k="type">Type</th><th data-k="n">Cameras passed (in order)</th><th data-k="direction">Direction</th>
+          <th data-k="t_first">First seen</th><th data-k="dur">Time on camera network</th><th data-k="sys">System search, on its own</th><th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="body sub">Which tracks belong to the same vehicle comes from the dataset's annotations (the answer key); the boxes are
+      our own detector and tracker. "System search, on its own" starts from the vehicle's first camera and lets our matcher
+      (exit direction, road travel time, appearance; no plates, no answer key) find the rest — then compares with the answer key.</div>
+  </div>
+</main>
+<div id="tip"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+let D, META, rows = [], sel = null, sortK = 'vehicle', sortDir = 1;
+const F = { count: 'all', dir: 'all', sys: 'all', id: '' };
+const tip = $('#tip');
+function showTip(ev, html) { tip.innerHTML = html; tip.style.display = 'block'; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 290) + 'px'; tip.style.top = ev.clientY + 14 + 'px'; }
+function hideTip() { tip.style.display = 'none'; }
+const sysOf = r => !r.system ? 'na' : r.system.full ? 'full' : r.system.wrong ? 'wrong' : 'part';
+const dirCls = d => d === 'east' ? 'east' : d === 'west' ? 'west' : d === 'one camera' ? 'one' : 'mixed';
+
+// ------------------------------------------------------------------ map
+const map = L.map('map');
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, className: 'dark-tiles', attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+const allLayer = L.layerGroup().addTo(map), selLayer = L.layerGroup().addTo(map);
+
+async function init() {
+  [D, META] = await Promise.all([fetch('/api/search/overview').then(r => r.json()), fetch('/api/search/meta').then(r => r.json())]);
+  for (const r of D.vehicles) { r.n = r.cams.length; r.dur = r.t_last - r.t_first; r.sys = sysOf(r); }
+  const S = D.summary;
+  $('#tiles').innerHTML = [
+    [S.vehicles, `vehicles annotated · from ${S.tracks.toLocaleString()} tracks our tracker made`],
+    [S.multi, 'passed 2 or more cameras'],
+    [S.by_count[4], 'passed all 4 cameras'],
+    [`${S.system_full} <small style="font-size:15px;color:var(--muted)">/ ${S.multi} · ${Math.round(100 * S.system_full / S.multi)}%</small>`,
+     'whole route found by the system alone, from the first camera'],
+  ].map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
+  for (const c of META.cameras)
+    L.marker([c.lat, c.lon], { icon: L.divIcon({ className: 'cam-pin', html: c.cam, iconSize: [24, 24] }), zIndexOffset: 1000 })
+      .bindTooltip(`Camera ${c.cam} — ${c.name}`).addTo(map);
+  map.fitBounds(META.cameras.map(c => [c.lat, c.lon]), { padding: [30, 30] });
+  drawBars(); drawFlow();
+  for (const [id, key] of [['#fCount', 'count'], ['#fDir', 'dir'], ['#fSys', 'sys']])
+    $(id).querySelectorAll('button').forEach(b => b.onclick = () => setFilter(id, key, b.dataset.v));
+  $('#fId').oninput = e => { F.id = e.target.value.trim(); render(); };
+  document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
+    sortDir = sortK === th.dataset.k ? -sortDir : 1; sortK = th.dataset.k; render();
+  });
+  render();
+}
+
+function setFilter(id, key, v) {
+  F[key] = v;
+  $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  if (key === 'count') document.querySelectorAll('#bars .bar').forEach(b => b.classList.toggle('on', b.dataset.n === v));
+  render();
+}
+
+// ------------------------------------------------------------------ charts
+function drawBars() {
+  const bc = D.summary.by_count, max = Math.max(...Object.values(bc));
+  $('#bars').innerHTML = [1, 2, 3, 4].map(n => `<div class="bar" data-n="${n}">
+      <span>${n === 4 ? 'all 4 cameras' : n === 1 ? '1 camera' : n + ' cameras'}</span>
+      <div class="track"><div class="fill" style="width:${100 * bc[n] / max}%"></div></div><span class="n">${bc[n]}</span></div>`).join('') +
+    `<div class="sub" style="margin-top:8px">Most vehicles leave the corridor at a roundabout: they turn onto a side road between cameras.</div>`;
+  document.querySelectorAll('#bars .bar').forEach(b => {
+    b.onclick = () => setFilter('#fCount', 'count', F.count === b.dataset.n ? 'all' : b.dataset.n);
+    b.onmousemove = ev => showTip(ev, `<b>${bc[b.dataset.n]}</b> vehicles passed exactly ${b.dataset.n} camera(s)<br><span class="sub">click to list them</span>`);
+    b.onmouseleave = hideTip;
+  });
+}
+
+function drawFlow() {
+  const W = 640, H = 210, xs = [70, 240, 410, 580], y = 105, fl = D.flows;
+  const max = Math.max(...[1, 2, 3].flatMap(i => [fl[`${i}-${i + 1}`] || 0, fl[`${i + 1}-${i}`] || 0]));
+  const w = n => 3 + 15 * n / max;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Vehicles moving between adjacent cameras, eastbound and westbound">
+    <defs><marker id="ae" viewBox="0 0 10 10" refX="2" refY="5" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--east)"/></marker>
+    <marker id="aw" viewBox="0 0 10 10" refX="2" refY="5" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--west)"/></marker></defs>`;
+  for (let i = 0; i < 3; i++) {
+    const a = xs[i] + 34, b = xs[i + 1] - 34, e = fl[`${i + 1}-${i + 2}`] || 0, wv = fl[`${i + 2}-${i + 1}`] || 0;
+    s += `<g class="hit" data-t="${e} vehicles drove camera ${i + 1} → camera ${i + 2} (eastbound)">
+        <rect x="${a}" y="${y - 52}" width="${b - a}" height="40" fill="transparent"/>
+        <line x1="${a}" y1="${y - 26}" x2="${b - 14}" y2="${y - 26}" stroke="var(--east)" stroke-width="${w(e)}" stroke-linecap="round" marker-end="url(#ae)"/>
+        <text class="num" x="${(a + b) / 2}" y="${y - 42}" text-anchor="middle">${e} →</text></g>
+      <g class="hit" data-t="${wv} vehicles drove camera ${i + 2} → camera ${i + 1} (westbound)">
+        <rect x="${a}" y="${y + 12}" width="${b - a}" height="40" fill="transparent"/>
+        <line x1="${b}" y1="${y + 26}" x2="${a + 14}" y2="${y + 26}" stroke="var(--west)" stroke-width="${w(wv)}" stroke-linecap="round" marker-end="url(#aw)"/>
+        <text class="num" x="${(a + b) / 2}" y="${y + 52}" text-anchor="middle">← ${wv}</text></g>`;
+  }
+  const seen = c => D.vehicles.filter(r => r.cams.includes(c)).length;
+  xs.forEach((x, i) => {
+    s += `<g class="hit" data-t="Camera ${i + 1}: ${seen(i + 1)} annotated vehicles seen">
+      <rect x="${x - 30}" y="${y - 16}" width="60" height="32" rx="8" fill="#24303c" stroke="#e6edf3" stroke-width="1.5"/>
+      <text class="lbl" x="${x}" y="${y + 5}" text-anchor="middle">CAM ${i + 1}</text></g>
+      <text class="muted" x="${x}" y="${H - 8}" text-anchor="middle">${seen(i + 1)} seen</text>`;
+  });
+  const other = Object.entries(fl).filter(([k]) => Math.abs(k.split('-')[0] - k.split('-')[1]) !== 1).reduce((a, [, v]) => a + v, 0);
+  s += `</svg><div class="sub">Line width = number of vehicles. ${other ? `${other} vehicles skipped a camera (missed by the detector there).` : ''}`;
+  $('#flow').innerHTML = s + '</div>';
+  document.querySelectorAll('#flow .hit').forEach(g => { g.onmousemove = ev => showTip(ev, g.dataset.t); g.onmouseleave = hideTip; });
+}
+
+// ------------------------------------------------------------------ list + map
+function filtered() {
+  return D.vehicles.filter(r =>
+    (F.count === 'all' || r.n === +F.count) &&
+    (F.dir === 'all' || r.direction === F.dir) &&
+    (F.sys === 'all' || r.sys === F.sys) &&
+    (!F.id || String(r.vehicle).startsWith(F.id)));
+}
+
+function sysCell(r) {
+  if (!r.system) return '<span class="st na">— one camera only</span>';
+  const s = r.system, n = r.cams.length;
+  if (s.full) return `<span class="st good">✓ whole route (${n}/${n})</span>`;
+  if (s.wrong) return `<span class="st crit">✗ wrong vehicle picked · ${s.found.length}/${n} right</span>`;
+  return `<span class="st warn">◐ ${s.found.length}/${n} cameras, then stopped</span>`;
+}
+
+function chips(r) {
+  return `<span class="chips">${[1, 2, 3, 4].map(c => {
+    const i = r.cams.indexOf(c);
+    return `<span class="chip ${i >= 0 ? 'on ' + dirCls(r.direction) : ''}" title="${i >= 0 ? `camera ${c}: ${i + 1}${['st', 'nd', 'rd', 'th'][i]} stop` : `not at camera ${c}`}">${i >= 0 ? i + 1 : c}</span>`;
+  }).join('')}</span>`;
+}
+
+function render() {
+  rows = filtered();
+  const key = { sys: r => ['full', 'part', 'wrong', 'na'].indexOf(r.sys) }[sortK] || (r => r[sortK]);
+  rows.sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : a.vehicle - b.vehicle) * sortDir);
+  $('#count').textContent = `${rows.length} of ${D.vehicles.length} vehicles`;
+  $('#rows').innerHTML = rows.map(r => `<tr data-v="${r.vehicle}" class="${sel === r.vehicle ? 'sel' : ''}">
+      <td><b>#${r.vehicle}</b></td><td>${r.type}</td><td>${chips(r)} <span class="sub">${r.cams.join(' → ')}</span></td>
+      <td><span class="dir"><i style="background:${r.direction === 'east' ? 'var(--east)' : r.direction === 'west' ? 'var(--west)' : '#5b6672'}"></i>${r.direction}</span></td>
+      <td>${fmt(r.t_first)}</td><td>${r.n > 1 ? Math.round(r.dur) + ' s' : '—'}</td><td>${sysCell(r)}</td>
+      <td><a href="/search?v=${r.vehicle}" onclick="event.stopPropagation()">open ▸</a></td></tr>`).join('');
+  document.querySelectorAll('#rows tr').forEach(tr => tr.onclick = () => select(+tr.dataset.v));
+  drawAll();
+}
+
+function drawAll() {
+  // corridor load: how many listed vehicles drove each stretch, east and west, drawn side by side
+  allLayer.clearLayers();
+  const load = {};
+  for (const r of rows) for (let i = 1; i < r.cams.length; i++) {
+    const a = r.cams[i - 1], b = r.cams[i];
+    if (Math.abs(a - b) === 1) load[`${a}-${b}`] = (load[`${a}-${b}`] || 0) + 1;
+  }
+  const max = Math.max(1, ...Object.values(load));
+  for (const [k, ll] of Object.entries(D.roads)) {
+    const [lo, hi] = k.split('-').map(Number), pts = ll.map(([lon, lat]) => [lat, lon]);
+    for (const [from, to, col, off] of [[lo, hi, 'var(--east)', -1], [hi, lo, 'var(--west)', 1]]) {
+      const n = load[`${from}-${to}`] || 0;
+      if (!n) continue;
+      const shifted = pts.map(([la, lo2]) => [la + off * 0.00011, lo2]);
+      L.polyline(shifted, { color: col, weight: 2 + 10 * n / max, opacity: .85, lineCap: 'butt' }).addTo(allLayer)
+        .bindTooltip(`${n} listed vehicle(s) drove camera ${from} → ${to}`, { sticky: true });
+    }
+  }
+  // paths through the roundabouts, faint, coloured by direction
+  for (const r of rows.slice(0, 400)) for (const p of r.paths) if (p.length > 1)
+    L.polyline(p.map(([lon, lat]) => [lat, lon]), { color: r.direction === 'east' ? '#3987e5' : r.direction === 'west' ? '#d95926' : '#8b98a5', weight: 1.5, opacity: .25, interactive: false }).addTo(allLayer);
+  $('#mapsub').textContent = `${rows.length} vehicles · line width = number of vehicles · thin lines = each one's path through the roundabouts`;
+}
+
+function select(v) {
+  sel = v;
+  document.querySelectorAll('#rows tr').forEach(tr => tr.classList.toggle('sel', +tr.dataset.v === v));
+  const r = D.vehicles.find(x => x.vehicle === v);
+  selLayer.clearLayers();
+  const col = r.direction === 'west' ? '#ff9a6b' : '#7fb8ff';
+  const bounds = [];
+  r.paths.forEach((p, i) => {
+    if (p.length < 2) return;
+    const ll = p.map(([lon, lat]) => [lat, lon]); bounds.push(...ll);
+    L.polyline(ll, { color: '#0b0f13', weight: 9, opacity: .9 }).addTo(selLayer);
+    L.polyline(ll, { color: col, weight: 5 }).addTo(selLayer).bindTooltip(`camera ${r.cams[i]}: its path through the roundabout`, { sticky: true });
+  });
+  for (let i = 1; i < r.cams.length; i++) {
+    const a = r.cams[i - 1], b = r.cams[i], k = `${Math.min(a, b)}-${Math.max(a, b)}`;
+    if (!D.roads[k]) continue;
+    const ll = D.roads[k].map(([lon, lat]) => [lat, lon]); bounds.push(...ll);
+    L.polyline(ll, { color: col, weight: 4, dashArray: '8 6' }).addTo(selLayer).bindTooltip(`drove camera ${a} → ${b}`, { sticky: true });
+  }
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
+  $('#detail').innerHTML = `
+    <div><b style="font-size:16px">Vehicle #${r.vehicle}</b> <span class="sub">· ${r.type} · ${r.direction}</span></div>
+    <div>${chips(r)} &nbsp;camera ${r.cams.join(' → ')}</div>
+    <div class="sub">First seen ${fmt(r.t_first)}, last seen ${fmt(r.t_last)}${r.n > 1 ? ` · ${Math.round(r.dur)} s across the network` : ''}</div>
+    <div>${sysCell(r)}</div>
+    <div class="crops">${r.tracks.map(t => `<figure><img src="/api/search/crop/${t.cam}/${t.track}" alt="vehicle at camera ${t.cam}"><figcaption>camera ${t.cam} · C${t.track}</figcaption></figure>`).join('')}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <a href="/search?v=${r.vehicle}">▶ Watch its journey</a>
+      <a href="/search?cam=${r.tracks[0].cam}&track=${r.tracks[0].track}">🔎 Let the system find it</a></div>`;
+}
+
+init();
+</script>
+</body>
+</html>
