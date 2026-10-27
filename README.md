@@ -188,6 +188,10 @@ dashboard's read log; only hotlist matches become sightings on the map. A `--rol
 cloned-plate check, and a camera whose stream stops for 5 s is marked blind. Reads made while the
 control room is down are queued on the node and replayed. Full script and tips: [`DEMO.md`](DEMO.md).
 
+The **? Guided demo** button in the dashboard header walks a presenter through either a simulated chase
+or the live-camera demo: each step highlights part of the page, can act for you (start, approve, inject
+a clone) and waits for the real event in the live snapshot before moving on.
+
 ### Edge messaging
 
 Every read a node sends is numbered and signed (`server/messages.py`): the node's random boot id, a

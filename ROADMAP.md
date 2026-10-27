@@ -13,6 +13,11 @@ Mark an item `[x]` when it is done and add the date.
       ground paths, learned roundabout exits), endpoints in `server/app.py`, dashboard link,
       `scripts/roundabout_web_video.py`, `cameratransform` in requirements, `tests/test_search.py`, and the
       results section in `reports/roundabout/README.md`.
+- [x] (2026-10-27) **Guided demo** — commit the finished (uncommitted) "? Guided demo" pop-up tour in `server/static/index.html`
+      (simulated-chase and live-camera tracks that run the dashboard and wait for real events) and the
+      control-room clock fix in `server/app.py` (a failing tick is logged instead of silently stopping every
+      dashboard update — the cause of the black map). Split into five commits: clock fix; tour styles and
+      markup; simulated-chase steps; live-camera steps; README/DEMO.md mention + this roadmap entry.
 
 ## Reliability
 - [x] (2026-10-18) **Control-room tests** — pytest tests for `server/control_room.py`: live case opening, first

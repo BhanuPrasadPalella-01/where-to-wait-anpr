@@ -12,6 +12,12 @@ export WTW_EDGE_KEY=$(openssl rand -hex 16)   # shared secret; use the same valu
 Open http://localhost:8000 (others on the same Wi-Fi: http://<your-ip>:8000, `ipconfig getifaddr en0`).
 With `WTW_EDGE_KEY` set, only signed reads count; leave it unset for a quick unsigned tabletop run.
 
+**Guided demo.** The **? Guided demo** button in the dashboard header opens a step-by-step pop-up tour.
+*Simulated chase* (about 2 minutes, no cameras) runs the dashboard for you: it starts the chase,
+approves plans, injects a cloned plate and knocks out a camera, explaining each step. *Live cameras*
+gives the edge-node commands to copy and ticks off each step of the script below as it really happens
+(node online, live case open, wanted plate read, plan, second sighting, clone flagged).
+
 ## 2. Start one node per camera (each in its own terminal)
 ```bash
 # Mac webcam
