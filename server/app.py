@@ -7,6 +7,7 @@ POST /api/sighting is an unsigned manual entry, refused when WTW_EDGE_KEY is set
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 import time
@@ -21,6 +22,7 @@ from .messages import KEY_ENV, load_key
 from .search import DATA as SEARCH_DATA, SearchIndex
 
 STATIC = Path(__file__).parent / "static"
+log = logging.getLogger("uvicorn.error")
 app = FastAPI(title="Where to Wait — control room")
 db = Database()  # data/control_room.db: registry, sightings, reads, routes, alerts, audit log
 room = ControlRoom(db=db, edge_key=load_key())  # set WTW_EDGE_KEY to require signed edge reads
@@ -406,17 +408,21 @@ async def clock():
         tick = 0.25
         while True:
             await asyncio.sleep(tick)
-            room.check_edges(time.time())
-            room.check_acks(time.time())
-            room.clock_rate = state["speed"] if state["running"] and room.case else 0.0
-            if state["running"] and room.case:
-                room.step(tick * state["speed"])
-            if clients:
-                snap = room.snapshot(state["show_truth"])
-                snap["running"], snap["speed"] = state["running"], state["speed"]
-                for c in list(clients):
-                    try:
-                        await c.send_json(snap)
-                    except Exception:
-                        clients.discard(c)
+            try:
+                room.check_edges(time.time())
+                room.check_acks(time.time())
+                room.clock_rate = state["speed"] if state["running"] and room.case else 0.0
+                if state["running"] and room.case:
+                    room.step(tick * state["speed"])
+                if clients:
+                    snap = room.snapshot(state["show_truth"])
+                    snap["running"], snap["speed"] = state["running"], state["speed"]
+                    for c in list(clients):
+                        try:
+                            await c.send_json(snap)
+                        except Exception:
+                            clients.discard(c)
+            except Exception:
+                # one bad tick must not stop the clock: without this loop every dashboard freezes (black map)
+                log.exception("control-room tick failed")
     asyncio.create_task(loop())
