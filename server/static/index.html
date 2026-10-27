@@ -335,6 +335,7 @@ const sp = document.getElementById('speed');
 sp.oninput = () => { document.getElementById('speedv').textContent = sp.value + '×'; post('/api/settings', { speed: +sp.value }); };
 
 function render(s) {
+  window.lastSnap = s;  // read by the guided demo
   document.getElementById('clock').textContent = fmt(s.t);
   document.getElementById('plate').textContent = s.case ? s.case.plate : '—';
   const v = s.case && s.case.vehicle;
@@ -500,6 +501,135 @@ function connect() {
 }
 connect();
 
+// ------------------------------------------------------------------ guided demo
+// A pop-up walkthrough. Each step highlights part of the page, may do something for the presenter
+// (start the chase, approve the plan…) and may wait for a real event in the live snapshot.
+(() => {
+  const $ = id => document.getElementById(id);
+  const snap = () => window.lastSnap || { sightings: [], pending_plan: [], edges: [], cameras: [] };
+  const accepted = s => s.sightings.filter(x => x.status === 'accepted').length;
+  const flagged = s => s.sightings.filter(x => x.status.startsWith('flagged')).length;
+  const online = s => (s.edges || []).filter(e => e.online).length;
+  const tab = name => document.querySelector(`.tabs button[data-tab="${name}"]`).click();
+  const setSpeed = v => { const sp = $('speed'); sp.value = v; sp.oninput(); };
+  const copyable = cmd => `<pre>${cmd}<button onclick="navigator.clipboard.writeText(this.parentElement.firstChild.textContent)">copy</button></pre>`;
+  const host = location.host;
+
+  const SIM = [
+    { sel: '#map', title: 'This is the city',
+      html: `<p>A real road map of Hyderabad (OpenStreetMap). The small grey dots are <b>${snap().cameras.length || 1678} number-plate cameras</b> at junctions,
+             and <b>U1–U4</b> are police patrol units.</p><p>The question the system answers: <i>a vehicle has just been stolen — where should each unit
+             go and wait so that it is caught?</i></p>` },
+    { sel: '#start', title: 'Start the chase', actionLabel: 'Start the chase ▶',
+      action: () => { fitted = false; post('/api/demo/start'); tab('case'); },
+      html: `<p>Pressing <b>Simulated chase</b>: a car is reported stolen at a junction and drives off. It drives like a real
+             fugitive would (fast main roads, or hiding in back streets) and the system does not know which.</p>
+             <p class="muted">The <b style="color:#ff5c5c">red dot</b> is the real car. It is shown only so the audience can follow — the system never sees it.</p>` },
+    { sel: '#map', title: 'Where could it be by now?', waitFor: s => accepted(s) > 0, auto: true,
+      waitText: 'waiting for a camera to read the plate…',
+      html: `<p>The <b style="color:#f5b942">orange cloud</b> is the system's belief: thousands of guesses (particles) of where the car could be now,
+             each one a possible route from the incident. With no news it keeps spreading along the roads.</p>` },
+    { sel: '#nsight', up: 1, title: 'A camera read the plate',
+      html: `<p>A <b style="color:#4c9aff">blue dot</b> is a sighting. Before using it, a <b>feasibility check</b> asks: could the car really have driven here in this
+             time? If yes, every guess that does not pass this camera at this time is dropped — the cloud snaps to this spot and
+             spreads again from here.</p><p class="muted">The orange line is the most likely route it took, rebuilt from the road graph.</p>` },
+    { sel: '#plan', title: 'The plan — an officer decides', waitFor: s => s.pending_plan.length > 0,
+      waitText: 'waiting for the planner to propose a plan…', waitFirst: true, actionLabel: '✔ Approve the plan', action: () => post('/api/approve'),
+      html: `<p>The planner picks the junctions that catch the most of the cloud <i>after</i> a unit can get there (green dashed lines).
+             It is a greedy algorithm with a proven guarantee: at least half as good as the best possible plan.</p>
+             <p><b>Nothing moves without an officer.</b> Approve or reject.</p>` },
+    { sel: '#prob', up: 1, title: 'Units move into position',
+      html: `<p><b>Predicted catch</b> is the share of the cloud the waiting units cover. Every new sighting updates the cloud, and the
+             planner proposes changes — but a unit already in place is not moved for a tiny gain, so units are not sent zig-zagging.</p>` },
+    { sel: '#clone', title: 'Attack: a cloned plate', actionLabel: '⚠ Inject a cloned plate', action: () => post('/api/demo/clone'),
+      waitFor: s => flagged(s) > 0, waitText: 'waiting for the fake read…',
+      html: `<p>A second car with the <b>same plate</b> is read on the far side of the city. A naive system would send every unit there.</p>
+             <p>Here the feasibility check sees that no car could drive that far in that time: the read becomes a
+             <b style="color:#ff5c5c">red flagged square</b> — "impossible journey, possible clone" — and the units are not diverted.</p>` },
+    { sel: '#offline', title: 'A camera goes blind', actionLabel: '📷 Knock out a camera', action: () => post('/api/camera/random_offline'),
+      html: `<p>A camera in the predicted area goes offline (<b style="color:#b18cff">purple</b>). The system does not treat its silence as
+             "the car is not there", so it is not fooled into searching the wrong place.</p>` },
+    { sel: '#banner', title: 'How does it end?', waitFor: s => !!s.outcome, auto: true,
+      onEnter: () => { tab('case'); setSpeed(12); },
+      tick: s => { if (s.pending_plan.length) post('/api/approve'); },
+      waitText: 'speeding up to 12× and approving new plans for you… waiting for an interception or an escape',
+      html: `<p><b style="color:#3fb950">Intercepted</b>: a unit was waiting at a junction the car drove through.
+             <b style="color:#ff8a8a">Escaped</b>: it left the area first.</p>
+             <p class="muted">Not every chase is caught — in 1,000 simulated chases this planner caught 9.5 points more than the best simple
+             rule (statistically significant), and stayed ahead against a driving style it had never seen.</p>` },
+    { sel: '.tabs', title: 'Behind the scenes', onEnter: () => tab('log'),
+      html: `<p><b>Log</b>: every sighting, plan, approval and alert with its time. <b>Alerts</b>: what each unit was told and whether it
+             acknowledged on its phone (<a href="/unit/Unit%201" target="_blank">open Unit 1's phone page</a>). <b>Registry</b>: wanted
+             vehicles with case number, reason and officer — every entry is audited and expires after 28 days.</p>` },
+    { sel: null, title: 'That was the simulated demo',
+      html: `<p>Next you can show it with <b>real cameras and printed plates</b> (press <b>? Guided demo → Live cameras</b>), or open
+             <a href="/search">Vehicle Search</a> to follow real vehicles across four real traffic cameras.</p>` },
+  ];
+
+  let steps = [], i = 0, did = false, sat = false, advancing = false, timer = null;
+
+  function highlight(sel, up) {
+    document.querySelectorAll('.tour-hi').forEach(e => e.classList.remove('tour-hi'));
+    if (!sel) return;
+    let el = document.querySelector(sel);
+    for (let k = 0; el && k < (up || 0); k++) el = el.parentElement;
+    if (!el) return;
+    el.classList.add('tour-hi');
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function show() {
+    const st = steps[i];
+    did = false; sat = false; advancing = false;
+    if (st.onEnter) st.onEnter();
+    $('tStep').textContent = `${steps === SIM ? 'Simulated chase' : 'Live cameras'} · step ${i + 1} of ${steps.length}`;
+    $('tTitle').textContent = st.title;
+    $('tBody').innerHTML = st.html;
+    $('tBack').disabled = i === 0;
+    $('tBar').style.width = `${100 * (i + 1) / steps.length}%`;
+    highlight(st.sel, st.up);
+    update();
+  }
+
+  function update() {
+    // waitFirst: the event must happen before the action (a plan must exist to approve it);
+    // otherwise the action runs first and the step then waits for its effect (inject clone → red flag)
+    const st = steps[i], s = snap();
+    if (st.tick && !sat) st.tick(s);
+    if (st.waitFor) sat = sat || st.waitFor(s);
+    const waiting = st.waitFor && !sat && (!st.action || st.waitFirst || did);
+    $('tWait').innerHTML = !st.waitFor ? '' : sat ? `<div class="muted" style="color:#3fb950">${st.doneText ? st.doneText(s) : '✔ done'}</div>`
+                                             : waiting ? `<div class="wait">${st.waitText}</div>` : '';
+    $('tNext').textContent = st.action && !did ? st.actionLabel : i === steps.length - 1 ? 'Finish' : 'Next →';
+    $('tNext').disabled = !!(st.action && !did && st.waitFirst && !sat);
+    if (st.auto && sat && !advancing && i < steps.length - 1) { advancing = true; setTimeout(() => { if (steps[i] === st) { i++; show(); } }, 1500); }
+  }
+
+  function start(which) {
+    $('tourveil').classList.remove('on');
+    steps = which; i = 0;
+    $('tourcard').classList.add('on');
+    show();
+    clearInterval(timer); timer = setInterval(update, 500);
+  }
+  function end() {
+    clearInterval(timer);
+    $('tourcard').classList.remove('on');
+    highlight(null);
+  }
+
+  $('tourbtn').onclick = () => $('tourveil').classList.add('on');
+  $('tourClose').onclick = () => $('tourveil').classList.remove('on');
+  $('tourSim').onclick = () => start(SIM);
+  $('tSkip').onclick = end;
+  $('tBack').onclick = () => { if (i > 0) { i--; show(); } };
+  $('tNext').onclick = () => {
+    const st = steps[i];
+    if (st.action && !did) { st.action(); did = true; if (!st.waitFor || st.waitFirst) { i++; show(); } else update(); return; }
+    if (i === steps.length - 1) { end(); return; }
+    i++; show();
+  };
+})();
 </script>
 </body>
 </html>
