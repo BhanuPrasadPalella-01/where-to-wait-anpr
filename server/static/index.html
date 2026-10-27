@@ -566,6 +566,46 @@ connect();
              <a href="/search">Vehicle Search</a> to follow real vehicles across four real traffic cameras.</p>` },
   ];
 
+  const LIVE = [
+    { sel: null, title: 'What you need',
+      html: `<p>This laptop running the control room (it is), 1–3 cameras, a few toy cars and <b>printed number plates</b>.</p>
+             <p class="muted">Cameras: the Mac webcam, an iPhone via Continuity Camera, or an Android phone with the free "IP Webcam" app on the same Wi-Fi.
+             Plates: Indian format (e.g. KL02BM4659), at least 8 cm wide, matte paper, good light, camera 30–50 cm away.</p>` },
+    { sel: null, title: 'Switch the cameras on', waitFor: s => online(s) > 0,
+      waitText: 'waiting for a camera node to come online…', doneText: s => `✔ ${online(s)} camera node(s) online — their video appears on the map`,
+      html: `<p>In a new Terminal window in the project folder, start one node per camera:</p>
+             ${copyable('.venv/bin/python -m edge.camera_node --name cam-A --source 0')}
+             <p class="muted">iPhone: <code>--name cam-B --source 1</code> · Android: <code>--source http://PHONE_IP:8080/video</code> ·
+             a far-away camera for the clone moment: <code>--name cam-FAR --role far</code>. If the server was started with
+             <code>WTW_EDGE_KEY</code>, run the nodes with the same value.</p>` },
+    { sel: '#liveplate', title: 'Pick the wanted plate', waitFor: s => !!(s.case && s.case.live),
+      waitText: 'waiting for a live case to be opened…', onEnter: () => $('liveplate').focus(),
+      html: `<p>Let someone from the audience pick one printed plate. Type it in <b>WANTED PLATE</b> and press <b>Open live case</b>.</p>
+             <p class="muted">The proper way: Registry tab → register it with a case/FIR number, offence and officer → Track live.</p>` },
+    { sel: '#readsec', title: 'Every plate is checked', onEnter: () => tab('cams'),
+      html: `<p>Drive a few <i>other</i> cars past the camera. Each read shows up here as <b>not wanted</b>: every plate is checked against the
+             hotlist, but only the wanted one moves the map.</p>` },
+    { sel: '#map', title: 'Now the wanted car', waitFor: s => accepted(s) > 0, onEnter: () => tab('case'),
+      waitText: 'waiting for a camera to read the wanted plate…',
+      html: `<p>Drive the wanted car past the camera: the node's video shows a green <b>HOTLIST MATCH</b>, a blue sighting lands on the map with the
+             plate photo, the orange cloud spreads from there and a plan is proposed.</p>` },
+    { sel: '#plan', title: 'Approve the plan', waitFor: s => s.pending_plan.length > 0, waitText: 'waiting for a plan…', waitFirst: true,
+      actionLabel: '✔ Approve the plan', action: () => post('/api/approve'),
+      html: `<p>The officer approves; the units get their junctions (and their phones get an alert).</p>` },
+    { sel: '#nsight', up: 1, title: 'Second camera', waitFor: s => accepted(s) > 1, waitText: 'waiting for a second sighting…',
+      html: `<p>Move the car to the next camera. The cloud narrows to routes that pass both cameras in that time, and the plan updates.</p>` },
+    { sel: '#nflag', up: 1, title: 'The clone', waitFor: s => flagged(s) > 0, waitText: 'waiting for a read on the far camera…',
+      html: `<p>Hold a second car with the <b>same plate</b> in front of the far camera (cam-FAR). It is flagged in red: "impossible journey —
+             possible clone or misread. Not used." The units stay where they are.</p>` },
+    { sel: '.tabs', title: 'The patrol officer\'s phone', onEnter: () => tab('alerts'),
+      html: `<p>On a phone on the same Wi-Fi open <b>http://&lt;this laptop's IP&gt;:8000/unit/Unit%201</b>
+             (IP: <code>ipconfig getifaddr en0</code>). The officer sees the assignment and the wanted car and presses <b>Acknowledge</b>;
+             this tab shows who has acknowledged. <a href="/unit/Unit%201" target="_blank">Preview it here</a>.</p>` },
+    { sel: null, title: 'Done',
+      html: `<p>Also worth showing: stop the server for a few seconds while a car passes — the camera keeps the read and sends it when the server
+             is back, stamped with the time it was really seen. Full script: <code>DEMO.md</code>.</p>` },
+  ];
+
   let steps = [], i = 0, did = false, sat = false, advancing = false, timer = null;
 
   function highlight(sel, up) {
@@ -621,6 +661,7 @@ connect();
   $('tourbtn').onclick = () => $('tourveil').classList.add('on');
   $('tourClose').onclick = () => $('tourveil').classList.remove('on');
   $('tourSim').onclick = () => start(SIM);
+  $('tourLive').onclick = () => start(LIVE);
   $('tSkip').onclick = end;
   $('tBack').onclick = () => { if (i > 0) { i--; show(); } };
   $('tNext').onclick = () => {
