@@ -99,14 +99,57 @@
   @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: 50vh 50vh; } #map { height: 50vh; }
     #feeds { bottom: auto; top: 10px; left: auto; right: 10px; max-width: 48vw; flex-direction: column; }
     .feed { width: 46vw; } aside { overflow-y: auto; } }
+
+  /* guided demo */
+  #tourbtn { float: right; font-size: 12px; padding: 3px 8px; margin-left: 6px; color: #08111d; background: var(--amber); border-color: var(--amber); font-weight: 700; }
+  #tourveil { position: fixed; inset: 0; background: #000a; z-index: 3000; display: none; align-items: center; justify-content: center; }
+  #tourveil.on { display: flex; }
+  .tourpick { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; width: min(560px, calc(100vw - 32px)); }
+  .tourpick h2 { margin: 0 0 6px; font-size: 18px; }
+  .tourpick .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .tourpick .opt { text-align: left; padding: 12px; border-radius: 10px; }
+  .tourpick .opt b { display: block; font-size: 15px; margin-bottom: 4px; }
+  .tourpick .opt span { color: var(--muted); font-size: 12.5px; }
+  #tourcard { position: fixed; left: 16px; bottom: 16px; z-index: 3001; width: min(400px, calc(100vw - 32px)); display: none;
+              background: var(--panel); border: 1px solid var(--amber); border-radius: 12px; box-shadow: 0 8px 30px #000c; padding: 14px 16px; }
+  #tourcard.on { display: block; }
+  #tourcard .step { color: var(--amber); font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
+  #tourcard h3 { margin: 4px 0 6px; font-size: 16px; }
+  #tourcard p { margin: 6px 0; font-size: 13.5px; line-height: 1.45; }
+  #tourcard .muted { color: var(--muted); font-size: 12.5px; }
+  #tourcard pre { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 8px; font-size: 11.5px; white-space: pre-wrap;
+                  word-break: break-all; margin: 6px 0; position: relative; }
+  #tourcard pre button { position: absolute; top: 4px; right: 4px; font-size: 11px; padding: 2px 7px; }
+  #tourcard .wait { color: var(--amber); font-size: 12.5px; display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  #tourcard .wait::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--amber); border-right-color: transparent;
+                            animation: tspin .8s linear infinite; }
+  @keyframes tspin { to { transform: rotate(360deg); } }
+  #tourcard .nav { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+  #tourcard .bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+  #tourcard .bar i { display: block; height: 100%; background: var(--amber); transition: width .3s; }
+  .tour-hi { outline: 3px solid var(--amber) !important; outline-offset: 3px; border-radius: 8px; animation: thi 1.4s ease-in-out infinite; position: relative; z-index: 2; }
+  @keyframes thi { 50% { outline-color: #f5b94255; } }
+  @media (max-width: 800px) { #tourcard { bottom: auto; top: 8px; } .tourpick .opts { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <div id="feeds"></div>
+<div id="tourveil"><div class="tourpick">
+  <h2>Guided demo</h2>
+  <div class="sub">Pick how you want to show the control room. You can stop at any time.</div>
+  <div class="opts">
+    <button class="opt primary" id="tourSim"><b>▶ Simulated chase</b><span>About 2 minutes, no cameras needed. The tour runs the dashboard for you and explains every step.</span></button>
+    <button class="opt" id="tourLive"><b>● Live cameras</b><span>Real webcams/phones read real (printed) plates. The tour gives the commands and ticks off each step as it happens.</span></button>
+  </div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button id="tourClose">Close</button></div>
+</div></div>
+<div id="tourcard"><div class="step" id="tStep"></div><h3 id="tTitle"></h3><div id="tBody"></div><div id="tWait"></div>
+  <div class="nav"><button id="tBack">← Back</button><span style="flex:1"></span><button id="tSkip">End tour</button><button class="primary" id="tNext">Next →</button></div>
+  <div class="bar"><i id="tBar"></i></div></div>
 <aside>
   <header>
-    <h1>Where to Wait — Control Room <a href="/search" style="float:right;font-size:12px;color:var(--blue);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:3px 8px">🔎 Vehicle Search</a></h1>
+    <h1>Where to Wait — Control Room <button id="tourbtn" title="Step-by-step guided demo">? Guided demo</button> <a href="/search" style="float:right;font-size:12px;color:var(--blue);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:3px 8px">🔎 Vehicle Search</a></h1>
     <div class="sub">Live interception planning from ANPR sightings · officer confirms every move</div>
   </header>
   <section>
@@ -456,6 +499,7 @@ function connect() {
   ws.onclose = () => setTimeout(connect, 1000);
 }
 connect();
+
 </script>
 </body>
 </html>
