@@ -1,8 +1,11 @@
-"""Edge camera node (PDF Layer 2–3): video -> plate detection -> tracking -> OCR vote -> hotlist match.
+"""Edge camera node (PDF Layer 2–3): video -> plate detection -> tracking -> OCR vote -> hotlist match
+-> colour / type check.
 
 Every plate the camera reads is reported to the control room (matches *and* non-matches), so the
 dashboard shows the continuous checking. Only hotlist matches become sightings on the map.
-Annotated frames are streamed to the dashboard so the viewer sees exactly what the camera sees.
+The body colour and vehicle type are compared with the registered vehicle (edge/attributes.py); a
+mismatch lowers the match score. Annotated frames are streamed to the dashboard so the viewer sees
+exactly what the camera sees.
 
 Sources:  --source 0               Mac webcam (or iPhone via Continuity Camera: try 1)
           --source http://PHONE_IP:8080/video   Android "IP Webcam" app
@@ -30,12 +33,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from hotlist import Hotlist  # noqa: E402
+from edge.attributes import attribute_factor, body_region, dominant_colour, vehicle_type  # noqa: E402
 from indian_plate_format import correct  # noqa: E402
 from server.messages import KEY_ENV, Numberer, load_key, sign  # noqa: E402
 
 DET = ROOT / "weights" / "final" / "plate_detector_yolo26n.pt"
 OCR = ROOT / "weights" / "final" / "indian_plate_ocr.onnx"
 OCR_CFG = ROOT / "weights" / "final" / "indian_plate_ocr_config.yaml"
+VEH = ROOT / "weights" / "yolo26n.pt"  # stock COCO model for the vehicle type (optional)
 
 
 class Server:
@@ -125,6 +130,31 @@ def vote(reads: list[tuple[str, float]]) -> tuple[str, float]:
     return "".join(chars), max(c for _, c in same)
 
 
+def context_crop(frame, box, wide: float = 4.0, tall: float = 8.0):
+    """Region around a plate big enough to hold the whole vehicle, and the plate box inside it."""
+    H, W = frame.shape[:2]
+    x1, y1, x2, y2 = box
+    w, h = x2 - x1, y2 - y1
+    xa, xb = max(0, int(x1 - wide * w)), min(W, int(x2 + wide * w))
+    ya, yb = max(0, int(y1 - tall * h)), min(H, int(y2 + 2 * h))
+    return frame[ya:yb, xa:xb].copy(), (x1 - xa, y1 - ya, x2 - xa, y2 - ya)
+
+
+def track_attributes(samples, vehicle_det=None) -> tuple[str | None, str | None]:
+    """Colour and type of a tracked vehicle from its sharpest views.
+
+    samples: [(context crop, plate box in it)]; colour is a share-weighted vote over the views,
+    type comes from vehicle_det(image) -> [(x1, y1, x2, y2, coco_class)] on the sharpest view."""
+    votes = Counter()
+    for img, box in samples:
+        colour, share = dominant_colour(body_region(img, box))
+        if colour:
+            votes[colour] += share
+    colour = votes.most_common(1)[0][0] if votes else None
+    vtype = vehicle_type(vehicle_det(samples[0][0]), samples[0][1]) if vehicle_det and samples else None
+    return colour, vtype
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default="0")
@@ -139,6 +169,8 @@ def main():
     ap.add_argument("--show", action="store_true", help="also open a local preview window")
     ap.add_argument("--max-fps", type=float, default=12)
     ap.add_argument("--device", default="auto", help="detector device: auto, mps, cuda:0 or cpu")
+    ap.add_argument("--vehicle-model", default=str(VEH),
+                    help="COCO YOLO model for the vehicle type; 'none' checks the colour only")
     ap.add_argument("--key", default=None, help=f"shared HMAC key for signing reads (default: ${KEY_ENV})")
     a = ap.parse_args()
 
@@ -154,13 +186,22 @@ def main():
     print(f"[{a.name}] registered at map junction {junction}", flush=True)
 
     det, device = YOLO(str(DET)), pick_device(a.device)
+    vehicle_det = None
+    if a.vehicle_model != "none" and Path(a.vehicle_model).exists():
+        veh = YOLO(a.vehicle_model)
+
+        def vehicle_det(img):
+            r = veh(img, classes=[2, 3, 5, 7], conf=0.3, verbose=False, device=device)[0]
+            return [(*b, c) for b, c in zip(r.boxes.xyxy.cpu().numpy().tolist(), r.boxes.cls.int().cpu().tolist())]
+    else:
+        print(f"[{a.name}] no vehicle model ({a.vehicle_model}): checking colour only", flush=True)
     ocr = LicensePlateRecognizer(onnx_model_path=str(OCR), plate_config_path=str(OCR_CFG), device="cpu")
     src = int(a.source) if a.source.isdigit() else a.source
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
         sys.exit(f"cannot open video source {a.source!r}")
 
-    hot_plates, hl, hot_t, reg_t = [], None, 0.0, time.time()
+    hot_plates, hot_attrs, hl, hot_t, reg_t = [], {}, None, 0.0, time.time()
     tracks: dict[int, dict] = {}
     frame_i, last_push = 0, 0.0
     banner = ("", 0.0)
@@ -182,7 +223,8 @@ def main():
             reg_t = time.time()
         if time.time() - hot_t > 2:  # refresh the hotlist from the control room
             try:
-                hot_plates = srv.call("/api/hotlist").get("plates", [])
+                got = srv.call("/api/hotlist")
+                hot_plates, hot_attrs = got.get("plates", []), got.get("attributes", {})
                 hl = Hotlist(hot_plates) if hot_plates else None
             except Exception:
                 pass
@@ -201,7 +243,7 @@ def main():
                     continue
                 tr = tracks.setdefault(tid, {"crops": [], "last": frame_i, "sent": None, "box": None})
                 tr["last"], tr["box"] = frame_i, (x1, y1, x2, y2)
-                tr["crops"].append((sharpness(crop), crop.copy()))
+                tr["crops"].append((sharpness(crop), crop.copy(), context_crop(frame, (x1, y1, x2, y2))))
                 tr["crops"] = sorted(tr["crops"], key=lambda c: -c[0])[:3]
                 seen.add(tid)
 
@@ -209,7 +251,7 @@ def main():
         for tid, tr in list(tracks.items()):
             gone = frame_i - tr["last"] > 15
             if tr["sent"] is None and tr["crops"] and (len(tr["crops"]) >= 3 or gone):
-                crops = [cv2.cvtColor(c, cv2.COLOR_BGR2RGB) for _, c in tr["crops"]]
+                crops = [cv2.cvtColor(c, cv2.COLOR_BGR2RGB) for _, c, _ in tr["crops"]]
                 preds = ocr.run(crops, return_confidence=True)
                 reads = []
                 for p in preds:
@@ -218,17 +260,25 @@ def main():
                         reads.append((txt, float(np.min(p.char_probs)) if p.char_probs is not None else 0.5))
                 if reads:
                     plate, conf = vote(reads)
-                    best, score = hl.match(plate, conf) if hl else (None, 0.0)
+                    best, plate_score = hl.match(plate, conf) if hl else (None, 0.0)
+                    colour, vtype = track_attributes([c for _, _, c in tr["crops"]], vehicle_det)
+                    factor, attr = attribute_factor(colour, vtype, hot_attrs.get(best)) if best else (1.0, {})
+                    score = plate_score * factor
                     matched = best is not None and score >= a.theta
                     tr["sent"] = (plate, conf, matched, best, score)
                     ok_jpg, buf = cv2.imencode(".jpg", tr["crops"][0][1], [cv2.IMWRITE_JPEG_QUALITY, 85])
                     delivered = srv.send_read({
                         "name": a.name, "junction": junction, "plate": plate, "conf": round(conf, 3),
                         "matched": matched, "hotlist_plate": best, "score": round(score, 3),
+                        "plate_score": round(plate_score, 3), "colour": colour, "vehicle_type": vtype, "attr": attr,
                         "thumb": base64.b64encode(buf.tobytes()).decode() if ok_jpg else None,
                         "captured_at": time.time()})
-                    status = "HOTLIST MATCH" if matched else "not on hotlist"
-                    print(f"[{a.name}] read {plate} (conf {conf:.2f}) -> {status}"
+                    status = ("HOTLIST MATCH" if matched else "not on hotlist" if best is None
+                              else f"near {best}, score {score:.2f} too low"
+                                   + (f" after {'/'.join(k for k, v in attr.items() if v != 'ok')} mismatch"
+                                      if factor < 1 else ""))
+                    looks = " ".join(x for x in (colour, vtype) if x) or "colour ?"
+                    print(f"[{a.name}] read {plate} (conf {conf:.2f}, {looks}) -> {status}"
                           f"{'' if delivered else '  [server unreachable: LOCAL ALERT, queued]'}", flush=True)
                     if matched:
                         banner = (f"HOTLIST MATCH  {plate}  (score {score:.2f})", time.time())
