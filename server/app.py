@@ -71,6 +71,10 @@ class EdgeRead(BaseModel):
     hotlist_plate: str | None = None
     score: float = 0.0
     thumb: str | None = None
+    colour: str | None = None        # attribute check (edge/attributes.py)
+    vehicle_type: str | None = None
+    plate_score: float | None = None
+    attr: dict | None = None
     captured_at: float | None = None
     boot: str | None = None   # signed, numbered messages: see server/messages.py
     seq: int | None = None
@@ -199,8 +203,9 @@ def case_close(plate: str):
 
 @app.get("/api/hotlist")
 def hotlist():
-    """Plates every edge camera checks against: all active registered vehicles (+ the open case)."""
-    return {"plates": room.hotlist()}
+    """Plates every edge camera checks against: all active registered vehicles (+ the open case),
+    and their registered colour / type for the attribute check."""
+    return {"plates": room.hotlist(), "attributes": room.hotlist_attributes()}
 
 
 # ---------------------------------------------------------------- criminal / vehicle registration

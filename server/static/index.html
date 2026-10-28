@@ -68,6 +68,7 @@
   .rd img { width: 64px; height: 22px; object-fit: cover; border-radius: 3px; background: #000; }
   .rd b { font: 600 13px ui-monospace, monospace; }
   .rd .hit { color: var(--green); font-weight: 700; } .rd .miss { color: var(--muted); }
+  .rd .attr-mismatch { color: var(--red); } .rd .attr-close { color: var(--amber); } .rd .attr-ok { color: var(--green); }
   .cam-icon { background: #b18cff; color: #120a22; border: 2px solid #fff; border-radius: 6px; font: 700 10px system-ui;
               display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 4px; }
   .tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
@@ -313,6 +314,15 @@ window.focusCase = p => post(`/api/cases/${p}/focus`);
 window.closeCase = p => { if (confirm(`Stop tracking ${p}? Its units become free for the other cases.`)) post(`/api/cases/${p}/close`); };
 window.caseSeverity = (p, v) => post(`/api/cases/${p}/severity?value=${v}`);
 const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+// colour / type the camera saw, and how they compared with the registered vehicle (edge/attributes.py)
+const attrLine = r => {
+  const seen = [r.colour, r.vehicle_type].filter(Boolean).join(' ');
+  const checks = Object.entries(r.attr || {}).map(([k, v]) =>
+    `<span class="attr-${v}">${k} ${v === 'ok' ? '✔' : v === 'close' ? '≈' : '✘'}</span>`).join(' ');
+  const lowered = r.plate_score != null && r.score < r.plate_score
+    ? ` · score ${(+r.plate_score).toFixed(2)} → ${(+r.score).toFixed(2)}` : '';
+  return seen || checks ? `<div class="sub">${seen || 'colour ?'}${checks ? ' · ' + checks : ''}${lowered}</div>` : '';
+};
 
 document.getElementById('live').onclick = () => {
   const p = document.getElementById('liveplate').value.trim();
@@ -364,7 +374,7 @@ function render(s) {
   }
   document.getElementById('reads').innerHTML = (s.reads || []).slice().reverse().map(r =>
     `<div class="rd"><img src="/api/thumb/read/${r.rid}" onerror="this.style.visibility='hidden'">
-     <div><b>${r.plate}</b> <span class="sub">conf ${(+r.conf).toFixed(2)} · ${r.camera}</span></div>
+     <div><b>${r.plate}</b> <span class="sub">conf ${(+r.conf).toFixed(2)} · ${r.camera}</span>${attrLine(r)}</div>
      <span class="${r.hit || r.hotlist ? 'hit' : 'miss'}">${r.hit ? 'MATCH ✔' : r.hotlist ? 'on hotlist ⚑' : 'not wanted'}</span></div>`).join('')
     || '<div class="sub">waiting for the cameras to read a plate…</div>';
   if (s.case && s.case.live) document.getElementById('livehint').textContent =

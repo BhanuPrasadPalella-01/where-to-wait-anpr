@@ -151,6 +151,13 @@ class ControlRoom:
         plates += [p for p in self.cases if p not in plates]
         return plates
 
+    def hotlist_attributes(self) -> dict[str, dict]:
+        """Registered colour / type per hotlist plate, for the edge nodes' attribute check."""
+        out = {v["plate"]: v for v in self.db.vehicles()}
+        out.update({p: c.info["vehicle"] for p, c in self.cases.items() if c.info.get("vehicle") and p not in out})
+        return {p: {"colour": v.get("colour") or "", "vehicle_type": v.get("vehicle_type") or ""}
+                for p, v in out.items() if v.get("colour") or v.get("vehicle_type")}
+
     def describe(self, plate: str | None = None) -> str:
         v = (self.case or {}).get("vehicle") if plate is None else self.db.active_vehicle(plate)
         plate = plate or (self.case or {}).get("plate", "")
@@ -516,7 +523,11 @@ class ControlRoom:
         hit = bool(matched and matched in self.cases)
         rec = {"rid": self.read_seq, "t": round(t, 1), "camera": r["name"], "junction": e["junction"],
                "plate": plate, "conf": r.get("conf"), "score": r.get("score"), "hit": hit,
-               "hotlist": bool(matched), "thumb": r.get("thumb")}
+               "hotlist": bool(matched), "thumb": r.get("thumb"),
+               # attribute check on the edge (edge/attributes.py): what the camera saw, and the plate
+               # score before a colour / type mismatch lowered it
+               "colour": r.get("colour"), "vehicle_type": r.get("vehicle_type"),
+               "plate_score": r.get("plate_score"), "attr": r.get("attr") or {}}
         self.reads.append(rec)
         self.reads = self.reads[-80:]
         self.db.add_read(rec)
