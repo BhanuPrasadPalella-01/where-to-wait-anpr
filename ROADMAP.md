@@ -47,5 +47,5 @@ Mark an item `[x]` when it is done and add the date.
 - [x] (2026-10-25) **Fine-tune on own photos** — script and guide to label own plate photos (YOLO format) and
       fine-tune the plate detector from `weights/final/plate_detector_yolo26n.pt`; per-condition
       evaluation (day / night / two-row) report template.
-- [ ] **Colour and type check** — dominant-colour (HSV histogram) and vehicle-type attributes on the
+- [x] (2026-10-28) **Colour and type check** — dominant-colour (HSV histogram) and vehicle-type attributes on the
       edge node; mismatch lowers the match score; shown in the read log.

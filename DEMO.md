@@ -52,7 +52,11 @@ Run the nodes in shells where `WTW_EDGE_KEY` holds the same value (or pass `--ke
    capture order ("arrived late … replayed" in the event log).
 8. Open `http://<your-ip>:8000/unit/Unit%201` on a phone: the patrol unit sees its assignment and the
    wanted car, and presses **Acknowledge**; the **Alerts** tab shows who has acknowledged.
-9. After the case, **Registry → History** redraws the stored sightings and reconstructed route from the
+9. Colour check: register the plate with its colour (e.g. "red", vehicle type "car"), then show cam-A the same
+   printed plate on a toy car of another colour. The read log shows "blue car · colour ✘ · score 0.91 → 0.36"
+   for that read. With the default `--theta 0.05` a clean read still matches; start the node with
+   `--theta 0.5` to show a wrong-colour car rejected (no sighting) while the right car still matches.
+10. After the case, **Registry → History** redraws the stored sightings and reconstructed route from the
    database.
 
 Tabletop time scale: 1 real second = 10 city seconds (shown on screen), because toy cars cross the table
@@ -62,3 +66,6 @@ far faster than a real car crosses real junctions.
 * Print plates large (≥ 8 cm wide), matte paper, single-row first; two-row plates read less reliably.
 * Good light, camera ~30–50 cm from the cars, slight downward angle.
 * Indian format plates (e.g. `KL02BM4659`) read best — the OCR was fine-tuned on them.
+* The colour is taken from the body just above the plate: stick the plate on the car, not on a white card
+  that covers the bonnet. The vehicle type needs `weights/yolo26n.pt` (stock COCO model); without it the
+  node checks the colour only (`--vehicle-model none` forces that).

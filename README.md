@@ -188,6 +188,15 @@ dashboard's read log; only hotlist matches become sightings on the map. A `--rol
 cloned-plate check, and a camera whose stream stops for 5 s is marked blind. Reads made while the
 control room is down are queued on the node and replayed. Full script and tips: [`DEMO.md`](DEMO.md).
 
+**Colour and type check** (`edge/attributes.py`). A cloned or misread plate is often on the wrong car, so
+the node also takes the dominant colour of the paintwork just above the plate (HSV histogram: unsaturated
+pixels vote black / grey / white by brightness, the rest by hue) and, when the stock COCO model
+`weights/yolo26n.pt` is present, the vehicle type (car, motorcycle, bus, truck) of the box holding the plate.
+Both are compared with the colour and type typed in at registration (`/api/hotlist` serves them): a mismatch
+multiplies the match score by 0.4, a near miss (white vs grey, van vs car) by 0.8, and an unknown on either
+side leaves it unchanged — the check can only weaken a plate match, never create one. The read log shows
+what the camera saw, each check (✔ / ≈ / ✘) and the score before and after.
+
 The **? Guided demo** button in the dashboard header walks a presenter through either a simulated chase
 or the live-camera demo: each step highlights part of the page, can act for you (start, approve, inject
 a clone) and waits for the real event in the live snapshot before moving on.
