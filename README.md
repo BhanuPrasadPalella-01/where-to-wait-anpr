@@ -22,7 +22,7 @@ greedy coverage planner. An officer confirms every step; nothing here issues sto
 | Greedy planner vs brute-force optimum | ≥ 0.959 (theory: ≥ 0.5), ~5 ms per plan |
 | Own Dijkstra / Yen vs NetworkX | identical on 1,000 / 30 random pairs |
 | Plate OCR on held-out Indian plates | 44.2% → **75.7%** exact after fine-tuning |
-| Fuzzy hotlist match (BK-tree + confusion-weighted distance) | wanted cars caught 70.1% → **87.6%**, 0 innocent cars flagged |
+| Fuzzy hotlist match (BK-tree + confusion-weighted distance) | wanted cars caught 70.1% → **87.6%**, 0 innocent cars flagged (θ chosen on validation, measured once on test) |
 | YOLO26n plate detector | mAP50 0.993 generic test, 0.799 on 47 real Indian photos |
 
 Negative results are reported too: evidence from cameras that did *not* see the car gave no
@@ -44,7 +44,7 @@ server/    control_room.py (open cases, gate, belief, shared plan, officer appro
            messages.py (signed, numbered edge messages), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
-           hotlist.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py,
+           hotlist.py, hotlist_threshold.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py,
            own_photos.py + finetune_own.py (fine-tune the detector on own photos, see FINETUNE.md)
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
            city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
