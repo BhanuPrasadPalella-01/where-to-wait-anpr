@@ -49,3 +49,8 @@ Mark an item `[x]` when it is done and add the date.
       evaluation (day / night / two-row) report template.
 - [x] (2026-10-28) **Colour and type check** — dominant-colour (HSV histogram) and vehicle-type attributes on the
       edge node; mismatch lowers the match score; shown in the read log.
+- [ ] **Validation-split threshold** — `scripts/eval_hotlist.py` currently reads θ off the test set. Add a
+      `--split val|test` option; choose θ on `data/indian_ocr/val.csv` (highest wanted-car recall with
+      0% innocent cars flagged), freeze it, then measure once on the test split. Tests for the threshold
+      choice on a small synthetic score table; update section 3 of `reports/RESULTS.md` with the new
+      val/test table and the frozen θ; README headline if the number changes.
