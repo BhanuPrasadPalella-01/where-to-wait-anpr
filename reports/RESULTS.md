@@ -34,23 +34,34 @@ Limitation: the model has 10 character slots; 0.5% of Indian plates have 11.
 
 ## 3. Hotlist matching with real OCR output (Layer 3)
 
-Hotlist = 100,000 synthetic Indian plates + 97 reads of "wanted" test plates; 170 reads of other
-test plates act as innocent cars. Hash map for exact hits, BK-tree (radius 2) for near misses,
-re-scored with an OCR-confusion-weighted edit distance; alert if score ≥ θ.
+Hotlist = 100,000 synthetic Indian plates + half of the split's plates ("wanted"); reads of the other
+half act as innocent cars. Hash map for exact hits, BK-tree (radius 2) for near misses, re-scored with an
+OCR-confusion-weighted edit distance; alert if score ≥ θ. Val and test share no plates.
 
-| Matching | Wanted cars caught | Innocent cars flagged |
-|---|---|---|
-| Exact hash only (plain ANPR) | 70.1% | 0% |
-| Fuzzy, θ = 0.05 | **87.6%** | **0%** |
-| Fuzzy, θ = 0.02 | 89.7% | 25.3% |
-| Fuzzy, no threshold | 90.7% | 100% |
+θ is chosen on the validation split only — highest wanted-car recall with 0% innocent cars flagged
+(ties → larger θ) — frozen in `reports/hotlist_theta.json`, then measured once on test:
+**θ = 0.05**.
 
-* With a realistic hotlist, 29% of innocent plates lie within 2 edits of *some* wanted plate —
+| Matching | Val: wanted caught | Val: innocent flagged | Test: wanted caught | Test: innocent flagged |
+|---|---|---|---|---|
+| Exact hash only (plain ANPR) | 69.9% | 0% | 70.1% | 0% |
+| **Fuzzy, frozen θ = 0.05** | **80.6%** | **0%** | **87.6%** | **0%** |
+| Fuzzy, θ = 0.04 (next lower) | 84.5% | 5.7% | 87.6% | 21.2% |
+| Fuzzy, θ = 0.02 | 89.3% | 7.3% | 89.7% | 25.3% |
+| Fuzzy, no threshold | 92.2% | 8.1% | 90.7% | 28.8% |
+
+Val: 226 reads (103 wanted, 123 innocent). Test: 267 reads (97 wanted, 170 innocent).
+
+* The frozen θ gives 0 innocent cars flagged on test too, so the earlier test-set choice was not an
+  overfit; the margin is thin, though: one grid step lower (0.04) flags 21% of innocent test cars.
+* With a realistic hotlist, 29% of innocent test plates lie within 2 edits of *some* wanted plate —
   near-match alone must never trigger a stop (the Aurora failure mode). The confidence-weighted
   score separates them.
-* θ was read off the test set here; for the report choose θ on the validation split and re-measure.
-* BK-tree at radius 2 on a dense 100k list checks ~45.6k plates per query (54% fewer than a linear
-  scan) — a real but modest saving; say so honestly.
+* "No threshold" now counts only reads that have a candidate within radius 2; the earlier table
+  counted every innocent read as flagged at θ = 0 (100%).
+* BK-tree at radius 2 on a dense 100k list checks ~43–46k plates per query (about 55% fewer than a
+  linear scan; the count shifts a little between runs with the tree's insertion order) — a real but
+  modest saving; say so honestly.
 
 ## 4. End-to-end pipeline on the 47 Indian photos
 
@@ -77,7 +88,8 @@ python3 -m venv .venv && .venv/bin/pip install ultralytics pandas pyarrow "fast-
 .venv/bin/python scripts/train_plate_detector.py            # ~2.5 h on M4
 .venv/bin/python scripts/eval_ocr_baseline.py test
 # OCR fine-tune uses a separate venv with fast-plate-ocr[train] (TensorFlow) — see reports/train_ocr_indian.log
-.venv/bin/python scripts/eval_hotlist.py
+.venv/bin/python scripts/eval_hotlist.py --split val    # choose and freeze θ
+.venv/bin/python scripts/eval_hotlist.py --split test   # measure once at the frozen θ
 .venv/bin/python scripts/read_plates.py data/indian_det/test/images
 ```
 

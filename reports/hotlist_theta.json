@@ -1,0 +1,10 @@
+{
+  "theta": 0.05,
+  "chosen_on": "val",
+  "rule": "highest wanted recall with 0 innocent cars flagged; ties -> larger theta",
+  "val": {
+    "wanted_recall": 0.8058,
+    "wrong_vehicle_alerts_per_1000_reads": 0.0,
+    "innocent_cars_flagged": 0.0
+  }
+}

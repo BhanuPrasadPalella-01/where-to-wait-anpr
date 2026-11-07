@@ -1,0 +1,87 @@
+{
+  "split": "val",
+  "hotlist_size": 100072,
+  "bk_build_s": 4.4,
+  "reads": 226,
+  "wanted_reads": 103,
+  "innocent_reads": 123,
+  "bk_mean_comparisons": 43178,
+  "linear_scan_comparisons": 100072,
+  "exact": {
+    "wanted_recall": 0.699,
+    "wrong_vehicle_alert_rate": 0.0
+  },
+  "fuzzy": {
+    "theta=0.0": {
+      "wanted_recall": 0.9223,
+      "wrong_vehicle_alerts_per_1000_reads": 44.2,
+      "innocent_cars_flagged": 0.0813
+    },
+    "theta=0.01": {
+      "wanted_recall": 0.9223,
+      "wrong_vehicle_alerts_per_1000_reads": 44.2,
+      "innocent_cars_flagged": 0.0813
+    },
+    "theta=0.02": {
+      "wanted_recall": 0.8932,
+      "wrong_vehicle_alerts_per_1000_reads": 39.8,
+      "innocent_cars_flagged": 0.0732
+    },
+    "theta=0.03": {
+      "wanted_recall": 0.8738,
+      "wrong_vehicle_alerts_per_1000_reads": 39.8,
+      "innocent_cars_flagged": 0.0732
+    },
+    "theta=0.04": {
+      "wanted_recall": 0.8447,
+      "wrong_vehicle_alerts_per_1000_reads": 31.0,
+      "innocent_cars_flagged": 0.0569
+    },
+    "theta=0.05": {
+      "wanted_recall": 0.8058,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.07": {
+      "wanted_recall": 0.7961,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.1": {
+      "wanted_recall": 0.7961,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.15": {
+      "wanted_recall": 0.767,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.2": {
+      "wanted_recall": 0.7087,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.3": {
+      "wanted_recall": 0.7087,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.5": {
+      "wanted_recall": 0.699,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    },
+    "theta=0.7": {
+      "wanted_recall": 0.6505,
+      "wrong_vehicle_alerts_per_1000_reads": 0.0,
+      "innocent_cars_flagged": 0.0
+    }
+  },
+  "theta": 0.05,
+  "at_theta": {
+    "wanted_recall": 0.8058,
+    "wrong_vehicle_alerts_per_1000_reads": 0.0,
+    "innocent_cars_flagged": 0.0
+  }
+}
