@@ -6,7 +6,13 @@ Every test crop is read by the OCR, then matched three ways:
   exact   : hash lookup only (what plain ANPR hotlists do)
   fuzzy   : BK-tree radius 2, best candidate by confusion-weighted distance, alert if score >= theta
 Reports wanted-vehicle recall, wrong-vehicle alert rate, and BK-tree comparisons vs a linear scan.
+
+theta is never read off the test set:
+  --split val   run the same protocol on data/indian_ocr/val.csv, choose theta (highest wanted recall with
+                0 innocent cars flagged) and freeze it in reports/hotlist_theta.json
+  --split test  (default) measure once on test.csv at the frozen theta; the full sweep is kept for reference
 """
+import argparse
 import json
 import random
 import string
@@ -19,9 +25,12 @@ import pandas as pd
 from fast_plate_ocr import LicensePlateRecognizer
 
 from hotlist import Hotlist
+from hotlist_threshold import THETAS, choose_theta, load_frozen, save_frozen, sweep
 
 ROOT = Path(__file__).resolve().parents[1]
 OCR = ROOT / "data" / "indian_ocr"
+REPORTS = ROOT / "reports"
+FROZEN = REPORTS / "hotlist_theta.json"
 STATES = "AP AR AS BR CG GA GJ HR HP JH KA KL MP MH MN ML MZ NL OD PB RJ SK TN TS TR UP UK WB DL JK".split()
 
 
@@ -33,9 +42,13 @@ def synthetic_plates(n: int, rng: random.Random) -> set:
     return out
 
 
-def main(n_synth: int = 100_000):
+def main(split: str = "test", n_synth: int = 100_000, theta: float | None = None):
+    if split == "test" and theta is None:
+        if not FROZEN.exists():
+            sys.exit(f"no frozen theta in {FROZEN.relative_to(ROOT)}: run with --split val first")
+        theta = load_frozen(FROZEN)
     rng = random.Random(0)
-    df = pd.read_csv(OCR / "test.csv")
+    df = pd.read_csv(OCR / f"{split}.csv")
     ocr = LicensePlateRecognizer(onnx_model_path=str(ROOT / "weights/final/indian_plate_ocr.onnx"),
                                  plate_config_path=str(ROOT / "weights/final/indian_plate_ocr_config.yaml"), device="cpu")
     preds = ocr.run([str(OCR / p) for p in df.image_path], return_confidence=True)
@@ -62,23 +75,29 @@ def main(n_synth: int = 100_000):
     res = pd.DataFrame(rows)
     w, inn = res[res.wanted], res[~res.wanted]
 
-    out = {"hotlist_size": hl.tree.size, "bk_build_s": round(build_s, 1),
-           "test_reads": len(res), "wanted_reads": len(w), "innocent_reads": len(inn),
+    out = {"split": split, "hotlist_size": hl.tree.size, "bk_build_s": round(build_s, 1),
+           "reads": len(res), "wanted_reads": len(w), "innocent_reads": len(inn),
            "bk_mean_comparisons": round(float(np.mean(comps))), "linear_scan_comparisons": hl.tree.size,
            "exact": {"wanted_recall": round(float((w.exact_hit & (w.read == w.truth)).mean()), 4),
                      "wrong_vehicle_alert_rate": round(float(res.exact_hit[res.read != res.truth].mean()), 4)},
-           "fuzzy": {}}
-    for theta in (0.0, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7):
-        alert = res.score >= theta
-        correct = alert & (res.fuzzy_plate == res.truth)
-        wrong = alert & (res.fuzzy_plate != res.truth)
-        out["fuzzy"][f"theta={theta}"] = {
-            "wanted_recall": round(float(correct[res.wanted].mean()), 4),
-            "wrong_vehicle_alerts_per_1000_reads": round(1000 * float(wrong.mean()), 1),
-            "innocent_cars_flagged": round(float(alert[~res.wanted].mean()), 4)}
+           "fuzzy": {f"theta={t}": m for t, m in sweep(rows, THETAS).items()}}
+    if split == "val":
+        theta = choose_theta(sweep(rows, THETAS))
+        save_frozen(FROZEN, theta, split, sweep(rows, [theta])[theta])
+        print(f"theta = {theta} chosen on val, frozen in {FROZEN.relative_to(ROOT)}")
+    out["theta"] = theta
+    out["at_theta"] = sweep(rows, [theta])[theta]
     print(json.dumps(out, indent=2))
-    (ROOT / "reports" / "hotlist_eval.json").write_text(json.dumps(out, indent=2))
+    name = "hotlist_eval.json" if split == "test" else f"hotlist_eval_{split}.json"
+    (REPORTS / name).write_text(json.dumps(out, indent=2))
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 100_000)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--split", choices=["val", "test"], default="test")
+    ap.add_argument("--n-synth", type=int, default=100_000, help="synthetic plates added to the hotlist")
+    ap.add_argument("--theta", type=float, help="test split only: override the frozen theta")
+    a = ap.parse_args()
+    if a.theta is not None and a.split == "val":
+        ap.error("--theta is chosen on val, not given")
+    main(a.split, a.n_synth, a.theta)
