@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 TESTED = ["planner.roadgraph", "planner.fugitive", "planner.belief", "planner.plan", "planner.reconstruct",
           "planner.simulate", "planner.sumo_sim", "server.db", "server.control_room", "edge.camera_node", "edge.attributes",
-          "scripts.own_photos", "scripts.finetune_own"]
+          "scripts.own_photos", "scripts.finetune_own", "scripts.hotlist_threshold"]
 HEAVY = ["torch", "ultralytics", "fast_plate_ocr", "onnxruntime", "osmnx", "traci", "sumolib", "pandas",
          "matplotlib", "fastapi"]
 
