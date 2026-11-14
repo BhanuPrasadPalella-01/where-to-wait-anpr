@@ -54,3 +54,21 @@ Mark an item `[x]` when it is done and add the date.
       0% innocent cars flagged), freeze it, then measure once on the test split. Tests for the threshold
       choice on a small synthetic score table; update section 3 of `reports/RESULTS.md` with the new
       val/test table and the frozen θ; README headline if the number changes.
+- [ ] **11-character plates** — the OCR model has 10 character slots and 0.5% of Indian plates have 11
+      (`reports/RESULTS.md` §2). Detect likely-truncated reads (format check against
+      `scripts/indian_plate_format.py`, plate aspect / crop width), then either try a fallback read or flag
+      the read for manual review in the read log; hotlist matching treats a flagged read as a prefix match.
+      Tests on synthetic reads; a short results note. No retraining.
+- [ ] **OCR error analysis and label audit** — script that breaks the held-out OCR errors down by type
+      (dropped last character, substitution by confusion pair, insertion) and lists suspect source labels
+      (e.g. MH47AV6753) where the model and the format check both disagree with the label. Results table in
+      `reports/RESULTS.md` from an actual run; README note.
+
+## Reliability (continued)
+- [ ] **Clock-skew handling** — the README assumes node clocks are roughly in sync (NTP) and only clamps a
+      future capture time to "now". Estimate each camera's clock offset from its heartbeats (server receive
+      time vs. node send time, smoothed), correct sighting capture times before the belief update, show the
+      offset on the dashboard camera list. Tests with deliberately skewed nodes; README update.
+- [ ] **End-to-end smoke test in CI** — FastAPI `TestClient` test on the synthetic graph: open a case, send
+      signed sightings, approve a plan, query the `/search` endpoints. Runs in the existing graph-free
+      GitHub Actions job (no model or map downloads).
