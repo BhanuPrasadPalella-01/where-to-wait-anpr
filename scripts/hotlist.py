@@ -4,8 +4,14 @@ candidates re-scored with an OCR-confusion-weighted edit distance.
 BK-tree: metric tree over plain Levenshtein distance. A query of radius r only descends into
 children whose edge label k satisfies |k - d(query, node)| <= r (triangle inequality), so most
 of a large stolen-vehicle list is never compared.
+
+Truncated reads (edge/plate_length.py): the 10-slot OCR model cuts an 11-character plate to its first ten
+characters. A read flagged as truncated is matched as a *prefix*: the missing tail costs nothing, only the
+characters the model did read are compared. An exact prefix hit is a hash lookup like an exact read; when
+several wanted plates share the prefix the score is split between them (the read cannot tell them apart).
 """
 import math
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 # Look-alike pairs that OCR swaps: substituting one for the other costs little.
@@ -83,16 +89,29 @@ class Hotlist:
 
     def __init__(self, plates, lam: float = 1.5, radius: int = 2):
         self.exact = set(plates)
+        self.prefix = defaultdict(list)  # plate minus its last character -> plates (truncated reads)
         self.tree = BKTree()
         for p in plates:
             self.tree.add(p)
+            self.prefix[p[:-1]].append(p)
         self.lam, self.radius = lam, radius
 
-    def match(self, read: str, ocr_conf: float = 1.0):
+    def distance(self, read: str, plate: str, truncated: bool = False) -> float:
+        """Confusion-weighted distance; for a truncated read only the characters it has are compared."""
+        if truncated and len(plate) > len(read):
+            plate = plate[:len(read)]
+        return weighted_distance(read, plate)
+
+    def match(self, read: str, ocr_conf: float = 1.0, truncated: bool = False):
+        """Best wanted plate for an OCR read and its score; truncated=True for a read flagged by
+        edge/plate_length.check (its last character(s) may be missing)."""
         if read in self.exact:  # O(1) hash hit
             return read, ocr_conf
+        if truncated and read in self.prefix:  # O(1) prefix hit: the read is a wanted plate minus its tail
+            hits = sorted(self.prefix[read])
+            return hits[0], ocr_conf / len(hits)
         cands, _ = self.tree.search(read, self.radius)
         if not cands:
             return None, 0.0
-        best = min(cands, key=lambda c: weighted_distance(read, c[0]))[0]
-        return best, ocr_conf * math.exp(-self.lam * weighted_distance(read, best))
+        best = min(cands, key=lambda c: self.distance(read, c[0], truncated))[0]
+        return best, ocr_conf * math.exp(-self.lam * self.distance(read, best, truncated))
