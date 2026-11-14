@@ -4,7 +4,9 @@
 Every plate the camera reads is reported to the control room (matches *and* non-matches), so the
 dashboard shows the continuous checking. Only hotlist matches become sightings on the map.
 The body colour and vehicle type are compared with the registered vehicle (edge/attributes.py); a
-mismatch lowers the match score. Annotated frames are streamed to the dashboard so the viewer sees
+mismatch lowers the match score. A read that fills all ten OCR slots and looks cut (an 11-character
+plate, edge/plate_length.py) gets a second read of the plate's right half; if that does not recover a legal
+plate, the read is flagged for manual review and matched against the hotlist as a prefix. Annotated frames are streamed to the dashboard so the viewer sees
 exactly what the camera sees.
 
 Sources:  --source 0               Mac webcam (or iPhone via Continuity Camera: try 1)
@@ -34,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from hotlist import Hotlist  # noqa: E402
 from edge.attributes import attribute_factor, body_region, dominant_colour, vehicle_type  # noqa: E402
+from edge import plate_length  # noqa: E402
 from indian_plate_format import correct  # noqa: E402
 from server.messages import KEY_ENV, Numberer, load_key, sign  # noqa: E402
 
@@ -128,6 +131,23 @@ def vote(reads: list[tuple[str, float]]) -> tuple[str, float]:
             cnt[t[i]] += c
         chars.append(cnt.most_common(1)[0][0])
     return "".join(chars), max(c for _, c in same)
+
+
+def complete_read(ocr_run, crops, plate: str) -> tuple[str, bool, str]:
+    """(plate, still truncated, review note) for a voted read; crops are the track's RGB plate crops.
+
+    A read that looks cut at the model's 10 slots (plate_length.check) is read again from the right half
+    of each wide-enough crop and stitched to the first read; ocr_run(list of images) -> list of strings."""
+    cut, why = plate_length.check(plate)
+    if not cut:
+        return plate, False, ""
+    retry = [c for c in crops if plate_length.should_retry(c.shape[1], c.shape[0])]
+    if retry:
+        tails = ["".join(ch for ch in t.upper() if ch.isalnum()) for t in ocr_run([plate_length.tail_crop(c) for c in retry])]
+        joined = plate_length.fallback(plate, tails)
+        if joined:
+            return joined, False, f"11th character from a second read (was {plate})"
+    return plate, True, f"check plate: {why}"
 
 
 def context_crop(frame, box, wide: float = 4.0, tall: float = 8.0):
@@ -260,7 +280,9 @@ def main():
                         reads.append((txt, float(np.min(p.char_probs)) if p.char_probs is not None else 0.5))
                 if reads:
                     plate, conf = vote(reads)
-                    best, plate_score = hl.match(plate, conf) if hl else (None, 0.0)
+                    plate, cut, review = complete_read(
+                        lambda imgs: [q.plate for q in ocr.run(imgs)], crops, plate)
+                    best, plate_score = hl.match(plate, conf, truncated=cut) if hl else (None, 0.0)
                     colour, vtype = track_attributes([c for _, _, c in tr["crops"]], vehicle_det)
                     factor, attr = attribute_factor(colour, vtype, hot_attrs.get(best)) if best else (1.0, {})
                     score = plate_score * factor
@@ -271,6 +293,7 @@ def main():
                         "name": a.name, "junction": junction, "plate": plate, "conf": round(conf, 3),
                         "matched": matched, "hotlist_plate": best, "score": round(score, 3),
                         "plate_score": round(plate_score, 3), "colour": colour, "vehicle_type": vtype, "attr": attr,
+                        "truncated": cut, "review": review,
                         "thumb": base64.b64encode(buf.tobytes()).decode() if ok_jpg else None,
                         "captured_at": time.time()})
                     status = ("HOTLIST MATCH" if matched else "not on hotlist" if best is None
@@ -278,6 +301,8 @@ def main():
                                    + (f" after {'/'.join(k for k, v in attr.items() if v != 'ok')} mismatch"
                                       if factor < 1 else ""))
                     looks = " ".join(x for x in (colour, vtype) if x) or "colour ?"
+                    if review:
+                        status += f"  [{review}]"
                     print(f"[{a.name}] read {plate} (conf {conf:.2f}, {looks}) -> {status}"
                           f"{'' if delivered else '  [server unreachable: LOCAL ALERT, queued]'}", flush=True)
                     if matched:

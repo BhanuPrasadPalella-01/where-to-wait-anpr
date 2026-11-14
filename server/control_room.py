@@ -527,10 +527,16 @@ class ControlRoom:
                # attribute check on the edge (edge/attributes.py): what the camera saw, and the plate
                # score before a colour / type mismatch lowered it
                "colour": r.get("colour"), "vehicle_type": r.get("vehicle_type"),
-               "plate_score": r.get("plate_score"), "attr": r.get("attr") or {}}
+               "plate_score": r.get("plate_score"), "attr": r.get("attr") or {},
+               # plate length check on the edge (edge/plate_length.py): a read that may be cut at the OCR's
+               # 10 slots is matched as a prefix and needs a look from the officer
+               "truncated": bool(r.get("truncated")), "review": r.get("review") or ""}
         self.reads.append(rec)
         self.reads = self.reads[-80:]
         self.db.add_read(rec)
+        if matched and rec["truncated"]:
+            self.log("flag", f"Read {plate} by {r['name']} may be cut at the OCR's 10 characters; it matched "
+                             f"{matched} as a prefix — check the plate photo.")
         if hit:
             e["matches"] += 1
             s = self.add_sighting(e["junction"], t, plate, float(r.get("score", 1.0)), source=r["name"],

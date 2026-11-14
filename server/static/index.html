@@ -68,6 +68,7 @@
   .rd img { width: 64px; height: 22px; object-fit: cover; border-radius: 3px; background: #000; }
   .rd b { font: 600 13px ui-monospace, monospace; }
   .rd .hit { color: var(--green); font-weight: 700; } .rd .miss { color: var(--muted); }
+  .rd .review { color: var(--amber); }
   .rd .attr-mismatch { color: var(--red); } .rd .attr-close { color: var(--amber); } .rd .attr-ok { color: var(--green); }
   .cam-icon { background: #b18cff; color: #120a22; border: 2px solid #fff; border-radius: 6px; font: 700 10px system-ui;
               display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 4px; }
@@ -323,6 +324,9 @@ const attrLine = r => {
     ? ` · score ${(+r.plate_score).toFixed(2)} → ${(+r.score).toFixed(2)}` : '';
   return seen || checks ? `<div class="sub">${seen || 'colour ?'}${checks ? ' · ' + checks : ''}${lowered}</div>` : '';
 };
+// plate length check (edge/plate_length.py): a read that may be cut at the OCR's 10 character slots
+const reviewLine = r => r.review
+  ? `<div class="sub review">${r.truncated ? '⚠ ' : ''}${r.review}${r.truncated ? ' · matched as a prefix' : ''}</div>` : '';
 
 document.getElementById('live').onclick = () => {
   const p = document.getElementById('liveplate').value.trim();
@@ -374,7 +378,7 @@ function render(s) {
   }
   document.getElementById('reads').innerHTML = (s.reads || []).slice().reverse().map(r =>
     `<div class="rd"><img src="/api/thumb/read/${r.rid}" onerror="this.style.visibility='hidden'">
-     <div><b>${r.plate}</b> <span class="sub">conf ${(+r.conf).toFixed(2)} · ${r.camera}</span>${attrLine(r)}</div>
+     <div><b>${r.plate}${r.truncated ? '…' : ''}</b> <span class="sub">conf ${(+r.conf).toFixed(2)} · ${r.camera}</span>${attrLine(r)}${reviewLine(r)}</div>
      <span class="${r.hit || r.hotlist ? 'hit' : 'miss'}">${r.hit ? 'MATCH ✔' : r.hotlist ? 'on hotlist ⚑' : 'not wanted'}</span></div>`).join('')
     || '<div class="sub">waiting for the cameras to read a plate…</div>';
   if (s.case && s.case.live) document.getElementById('livehint').textContent =
