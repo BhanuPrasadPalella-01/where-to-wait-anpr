@@ -32,6 +32,41 @@ Fine-tuned 85 epochs (early stop, best @55). Model: `weights/final/indian_plate_
 Remaining errors: mostly a dropped last digit; ≥1 source label looks wrong (MH47AV6753).
 Limitation: the model has 10 character slots; 0.5% of Indian plates have 11.
 
+### 2a. 11-character plates: truncation check (`edge/plate_length.py`, `scripts/eval_truncation.py`, 14 Nov 2026)
+
+No retraining. A read that fills all 10 slots is flagged as likely cut when it is a legal plate with a
+3-letter series and fewer than 4 digits (what DL14CTC0153 looks like without its last digit) or not a legal
+plate at all. A flagged read from a crop at least 80 px wide is read again from its right half and joined
+to the first read where they overlap (≥ 3 characters, exactly one character added, legal 11-character
+result). A read still flagged after that is marked for review in the read log and matched against the
+hotlist as a prefix (the missing tail costs nothing).
+
+| Split | Crops | Labels > 10 chars | Flagged | Flagged, label > 10 | Recovered by fallback | Flagged, label ≤ 10 | Wrong prefix hit |
+|---|---|---|---|---|---|---|---|
+| val | 226 | 1 | 1 | 1 | 0 | 0 | 0 |
+| test | 267 | 1 | 5 | 0 | 0 | 5 | 0 |
+| train (seen in fine-tuning) | 1,216 | 8 | 12 | 5 | 1 | 7 | 0 |
+
+Wrong prefix hit: a flagged read of a ≤ 10-character plate whose prefix lookup hits another plate on a
+hotlist of 100,000 synthetic plates + all labels.
+
+* Only two of the ten long labels are legal 11-character plates (DL14CTC0153, PB03AGT8979); the rest are
+  trade plates (MH14TC206AN) or label noise (KL01KL0KL01, GJW115A1138, a 12-character KA42TC131011).
+  Of their three crops, two are flagged. The fallback recovers DL14CTC0153 exactly (tail read `TC0153`); the
+  read of PB03AGT8979 is wrong before the cut (`PB03AGT189`), so the join would be 12 characters and is
+  refused. The third crop (DL14CTC0153, 66 px wide) reads `DL14CT0153`: a middle letter is lost, and the
+  result is a legal 10-character plate, so it is not flagged.
+* The trade plate MH14TC206AN reads as `MH14TC2061`, a legal 10-character plate: the format check cannot
+  see it, and is not meant to.
+* All 5 test-split flags are on ≤ 10-character plates: 3 crops labelled MH14TCF460 (a 3-letter series with
+  3 digits; real or a label missing a digit, it fits in 10 slots) and 2 misreads that break the format. A false flag costs a review note, not an alert: no
+  flagged read hit a wrong plate by prefix.
+* Effect on the match: with plain fuzzy matching, `DL14CTC015` scores conf × e^(−1.5) = 0.22 × conf
+  against DL14CTC0153 (one insertion); as a flagged prefix it scores conf. That keeps a low-confidence
+  read above θ = 0.05.
+* The numbers are tiny (2 legal long plates in 1,709 crops). They show the mechanism works on real crops,
+  not a rate; §3's hotlist numbers are unchanged, because untruncated reads match exactly as before.
+
 ## 3. Hotlist matching with real OCR output (Layer 3)
 
 Hotlist = 100,000 synthetic Indian plates + half of the split's plates ("wanted"); reads of the other

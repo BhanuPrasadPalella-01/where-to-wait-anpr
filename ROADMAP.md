@@ -54,7 +54,7 @@ Mark an item `[x]` when it is done and add the date.
       0% innocent cars flagged), freeze it, then measure once on the test split. Tests for the threshold
       choice on a small synthetic score table; update section 3 of `reports/RESULTS.md` with the new
       val/test table and the frozen θ; README headline if the number changes.
-- [ ] **11-character plates** — the OCR model has 10 character slots and 0.5% of Indian plates have 11
+- [x] (2026-11-14) **11-character plates** — the OCR model has 10 character slots and 0.5% of Indian plates have 11
       (`reports/RESULTS.md` §2). Detect likely-truncated reads (format check against
       `scripts/indian_plate_format.py`, plate aspect / crop width), then either try a fallback read or flag
       the read for manual review in the read log; hotlist matching treats a flagged read as a prefix match.

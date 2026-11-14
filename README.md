@@ -42,9 +42,10 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            sumo_sim.py    SUMO/TraCI replication with real traffic (pilot: reports/RESULTS.md section 9)
 server/    control_room.py (open cases, gate, belief, shared plan, officer approval, alerts, late-sighting replay),
            messages.py (signed, numbered edge messages), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
-edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room)
+edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room),
+           attributes.py (colour / type check), plate_length.py (reads cut at the OCR's 10 slots)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
-           hotlist.py, hotlist_threshold.py, eval_hotlist.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py,
+           hotlist.py, hotlist_threshold.py, eval_hotlist.py, eval_truncation.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py,
            own_photos.py + finetune_own.py (fine-tune the detector on own photos, see FINETUNE.md)
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
            city map (skipped if it is missing); test_roadgraph_synthetic.py, test_planner_synthetic.py
@@ -55,6 +56,7 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_edge_inbox.py, test_replay.py (signing, duplicates, out-of-order replay),
            test_multi_case.py, test_control_room_cases.py, test_multi_sim.py (several suspects),
            test_own_city.py (study-area options, $WTW_GRAPH), test_own_photos.py (label checks, group split, report table),
+           test_plate_length.py (truncation check, prefix match, fallback read),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -197,6 +199,13 @@ multiplies the match score by 0.4, a near miss (white vs grey, van vs car) by 0.
 side leaves it unchanged — the check can only weaken a plate match, never create one. The read log shows
 what the camera saw, each check (✔ / ≈ / ✘) and the score before and after.
 
+**11-character plates** (`edge/plate_length.py`). The OCR model has 10 character slots, so DL14CTC0153 comes
+back as DL14CTC015. A read that fills every slot and is either a 3-letter series with a short number or not a
+legal plate is flagged. The node reads the right half of the plate again and joins the two reads where they
+overlap. If that does not give a legal 11-character plate, the read log shows "⚠ check plate", the control
+room logs a flag, and the hotlist matches the read as a prefix of the wanted plate. Measured on the real
+crops in [`reports/RESULTS.md`](reports/RESULTS.md) §2a.
+
 The **? Guided demo** button in the dashboard header walks a presenter through either a simulated chase
 or the live-camera demo: each step highlights part of the page, can act for you (start, approve, inject
 a clone) and waits for the real event in the live snapshot before moving on.
@@ -240,7 +249,9 @@ runs detector + OCR end to end with the weights in `weights/final/`.
   control room.
 * Done: fine-tuning the plate detector on own photos — label checks, group split, per-condition
   (day / night / two_row) shipped-vs-fine-tuned evaluation ([`FINETUNE.md`](FINETUNE.md)).
-* Next: see [`ROADMAP.md`](ROADMAP.md) — colour and vehicle-type check on the edge node.
+* Done: colour and vehicle-type check on the edge node; hotlist θ chosen on the validation split.
+* Done: 11-character plates — truncation check, fallback read of the plate's right half, prefix match.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — OCR error analysis and label audit.
 
 ## Data and ethics
 
