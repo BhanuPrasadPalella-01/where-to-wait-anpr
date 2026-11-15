@@ -59,7 +59,7 @@ Mark an item `[x]` when it is done and add the date.
       `scripts/indian_plate_format.py`, plate aspect / crop width), then either try a fallback read or flag
       the read for manual review in the read log; hotlist matching treats a flagged read as a prefix match.
       Tests on synthetic reads; a short results note. No retraining.
-- [ ] **OCR error analysis and label audit** — script that breaks the held-out OCR errors down by type
+- [x] (2026-11-15) **OCR error analysis and label audit** — script that breaks the held-out OCR errors down by type
       (dropped last character, substitution by confusion pair, insertion) and lists suspect source labels
       (e.g. MH47AV6753) where the model and the format check both disagree with the label. Results table in
       `reports/RESULTS.md` from an actual run; README note.

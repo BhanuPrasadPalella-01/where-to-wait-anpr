@@ -29,7 +29,9 @@ Fine-tuned 85 epochs (early stop, best @55). Model: `weights/final/indian_plate_
 | Pretrained + Indian format correction | 47.6% | 84.3% | 79.0% | 3.1 |
 | **Fine-tuned on Indian plates** | **75.7%** | **93.6%** | **92.1%** | ~5 |
 
-Remaining errors: mostly a dropped last digit; ≥1 source label looks wrong (MH47AV6753).
+Remaining errors: mostly substitutions (68% of the 65 wrong test reads), not dropped digits; a few
+source labels are wrong. Breakdown and label audit in §2b (the earlier note here, "mostly a dropped last
+digit", came from the first eight examples, three of them crops of one two-row plate).
 Limitation: the model has 10 character slots; 0.5% of Indian plates have 11.
 
 ### 2a. 11-character plates: truncation check (`edge/plate_length.py`, `scripts/eval_truncation.py`, 14 Nov 2026)
@@ -66,6 +68,66 @@ hotlist of 100,000 synthetic plates + all labels.
   read above θ = 0.05.
 * The numbers are tiny (2 legal long plates in 1,709 crops). They show the mechanism works on real crops,
   not a rate; §3's hotlist numbers are unchanged, because untruncated reads match exactly as before.
+
+### 2b. Error analysis and label audit (`scripts/ocr_errors.py`, `scripts/label_audit.py`, `scripts/eval_ocr_errors.py`, 15 Nov 2026)
+
+Every val and test crop read by the fine-tuned model, format-corrected, and aligned to its label with the
+cheapest edit script (ties blame the rightmost character). Neither split was trained on; val chose the
+checkpoint and θ. Counts in `reports/ocr_errors.json`.
+
+| Error type | Val (226 crops) | Test (267 crops) |
+|---|---|---|
+| Exact | 160 (70.8%) | 202 (75.7%) |
+| Dropped last character | 1 (0.4%) | 2 (0.7%) |
+| Dropped other character(s) | 0 | 1 (0.4%) |
+| One substitution | 22 (9.7%) | 31 (11.6%) |
+| Several substitutions | 28 (12.4%) | 13 (4.9%) |
+| Insertion(s) | 2 (0.9%) | 1 (0.4%) |
+| Mixed (substitution + drop / insertion) | 9 (4.0%) | 8 (3.0%) |
+| Different plate (more than half the label differs) | 4 (1.8%) | 9 (3.4%) |
+
+| Where the edits fall (misreads of the same plate) | Val | Test |
+|---|---|---|
+| State code (first 2 characters) | 19 (15.2%) | 16 (16.3%) |
+| Middle (district, series) | 47 (37.6%) | 29 (29.6%) |
+| Number, except its last digit | 31 (24.8%) | 29 (29.6%) |
+| Last character | 28 (22.4%) | 24 (24.5%) |
+
+* Substitutions are the error, not drops: 44 of the 65 wrong test reads (68%) and 50 of 66 on val are
+  substitutions only; 3 test reads drop a character, all three crops of one two-row plate (MH47AV6753 →
+  MH47AV675, MH47AV673). An exact-match hotlist loses these reads; the radius-2 fuzzy match keeps the
+  single substitutions (§3).
+* The last character is the weakest single position: about a quarter of all edits on roughly a tenth of
+  the characters. It is usually read as another digit, not lost.
+* No confusion pair dominates: 192 substitutions spread over 112 pairs, the top ones E→C (6), 8→0 (5),
+  U→D (5), 8→3, 4→0, 0→O, 1→7, 4→2, T→I (4 each). Crops of one plate repeat, so pairs cluster by plate (all
+  six E→C are val crops of two plates); these are too few to re-weight the hotlist's confusion costs.
+* Format correction changes 26 of 493 reads: it fixes 2, breaks 2 and leaves 22 wrong. Two of those are a
+  Q read as 0 with confidence > 0.9 (TN19Q0835, UP45Q3028), which the correction turns into O: Q is not in
+  its digit-to-letter table.
+
+**Label audit.** A crop is listed when the model and the format check both speak against its label:
+the label is not a legal plate, or it is legal but the model reads a different legal plate with every
+character ≥ 0.9 confident. 18 of 493 crops (18 labels) are listed; each crop was then looked at by eye.
+
+| Reason | Crops | By eye |
+|---|---|---|
+| Label not legal, read legal, look-alike apart | 2 | 2 labels wrong: JK1182360 is JK11B2360, WB02A03017 is WB02AD3017 |
+| Label not a legal plate | 9 | 3 labels wrong (MH02B16890 has BI, BF06P00006 starts BR, AP310U7562 most likely 31BU); 2 trade plates labelled correctly (MH20TC189B, MH14TC206AN); 3 not Indian Latin-script plates (a dealer plate "TERRANO", a Devanagari plate labelled DEVANAGRI, a German plate); 1 too blurred to tell (PB2313752) |
+| Legal label, confident read of another plate | 1 | label wrong: the fourth crop labelled MH47AV6753 shows MH12FT9458, which the model reads exactly |
+| Legal label, confident near-miss read | 6 | 0 labels wrong: six confident misreads (MH01CY6333 → CV, MH02ER9194 → 9192, MH01DE2780 → DC2700, TN63BV7954 → 7952, and the two Q → 0 reads) |
+
+* 6 of the 18 listed labels are wrong, and 5 of the 11 illegal ones are plates the 10-slot Indian format
+  cannot describe. The "confident near-miss" rule found no wrong label: a confidence of 0.9 does not make a
+  one-character disagreement the label's fault, and those six are real OCR errors at high confidence.
+* MH47AV6753, the suspect named above: the label is right on three crops (a two-row plate, last digit
+  dropped) and wrong on the fourth, which is another vehicle.
+* Effect on §2's headline: with the 6 labels corrected, 3 reads become exact (JK11B2360 on val; WB02AD3017
+  and MH12FT9458 on test) — test 204/267 = 76.4% instead of 75.7%, val 161/226 = 71.2%. The other three
+  reads are still wrong against the corrected label. The tables above and §2 keep the dataset's labels.
+* Limits: the audit only sees labels the model disagrees with, so a wrong label the model happens to
+  reproduce (it reads DN0909704 as labelled) is not found; the by-eye check is one person on small crops,
+  and the train split (1,216 crops, seen in fine-tuning) was not audited.
 
 ## 3. Hotlist matching with real OCR output (Layer 3)
 
@@ -123,6 +185,7 @@ python3 -m venv .venv && .venv/bin/pip install ultralytics pandas pyarrow "fast-
 .venv/bin/python scripts/train_plate_detector.py            # ~2.5 h on M4
 .venv/bin/python scripts/eval_ocr_baseline.py test
 # OCR fine-tune uses a separate venv with fast-plate-ocr[train] (TensorFlow) — see reports/train_ocr_indian.log
+.venv/bin/python scripts/eval_ocr_errors.py             # error types, confusion pairs, label audit (§2b)
 .venv/bin/python scripts/eval_hotlist.py --split val    # choose and freeze θ
 .venv/bin/python scripts/eval_hotlist.py --split test   # measure once at the frozen θ
 .venv/bin/python scripts/read_plates.py data/indian_det/test/images

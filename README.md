@@ -45,6 +45,7 @@ server/    control_room.py (open cases, gate, belief, shared plan, officer appro
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room),
            attributes.py (colour / type check), plate_length.py (reads cut at the OCR's 10 slots)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
+           ocr_errors.py + label_audit.py + eval_ocr_errors.py (OCR error types, suspect labels),
            hotlist.py, hotlist_threshold.py, eval_hotlist.py, eval_truncation.py, read_plates.py, plot_results.py, sumo_pilot.py, multi_suspect_table.py,
            own_photos.py + finetune_own.py (fine-tune the detector on own photos, see FINETUNE.md)
 tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greedy vs exact) on the
@@ -57,6 +58,7 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_multi_case.py, test_control_room_cases.py, test_multi_sim.py (several suspects),
            test_own_city.py (study-area options, $WTW_GRAPH), test_own_photos.py (label checks, group split, report table),
            test_plate_length.py (truncation check, prefix match, fallback read),
+           test_ocr_errors.py (edit scripts, error types, label audit rules),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
@@ -206,6 +208,14 @@ overlap. If that does not give a legal 11-character plate, the read log shows "�
 room logs a flag, and the hotlist matches the read as a prefix of the wanted plate. Measured on the real
 crops in [`reports/RESULTS.md`](reports/RESULTS.md) §2a.
 
+**What the OCR gets wrong** (`scripts/eval_ocr_errors.py`). Each wrong read on the held-out crops is aligned
+to its label and named: 68% of the wrong test reads are substitutions only, 3 of 65 drop a character, and
+the last character takes about a quarter of all edits. The same run lists crops whose label the model and
+the plate format both speak against; of the 18 listed, 6 labels were wrong when checked by eye (a look-alike
+typed for the real character, or a crop of another vehicle). Correcting them moves the test exact-plate
+rate from 75.7% to 76.4%; the reported numbers keep the dataset's labels. Tables in
+[`reports/RESULTS.md`](reports/RESULTS.md) §2b.
+
 The **? Guided demo** button in the dashboard header walks a presenter through either a simulated chase
 or the live-camera demo: each step highlights part of the page, can act for you (start, approve, inject
 a clone) and waits for the real event in the live snapshot before moving on.
@@ -251,7 +261,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
   (day / night / two_row) shipped-vs-fine-tuned evaluation ([`FINETUNE.md`](FINETUNE.md)).
 * Done: colour and vehicle-type check on the edge node; hotlist θ chosen on the validation split.
 * Done: 11-character plates — truncation check, fallback read of the plate's right half, prefix match.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — OCR error analysis and label audit.
+* Done: OCR error analysis (error types, confusion pairs) and label audit on the held-out crops.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — clock-skew handling.
 
 ## Data and ethics
 
