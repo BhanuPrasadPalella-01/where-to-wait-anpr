@@ -1,0 +1,932 @@
+{
+  "val": {
+    "crops": 226,
+    "error_types": {
+      "exact": 160,
+      "dropped last character": 1,
+      "dropped other character(s)": 0,
+      "one substitution": 22,
+      "several substitutions": 28,
+      "insertion(s)": 2,
+      "mixed": 9,
+      "different plate": 4
+    },
+    "edit_positions": {
+      "middle": 47,
+      "number": 31,
+      "last": 28,
+      "state": 19
+    },
+    "format_correction": {
+      "unchanged": 211,
+      "fixed": 1,
+      "broken": 1,
+      "changed, still wrong": 13
+    },
+    "confusion_pairs": [
+      [
+        "E",
+        "C",
+        6
+      ],
+      [
+        "U",
+        "D",
+        5
+      ],
+      [
+        "8",
+        "0",
+        4
+      ],
+      [
+        "8",
+        "3",
+        4
+      ],
+      [
+        "0",
+        "O",
+        4
+      ],
+      [
+        "1",
+        "7",
+        4
+      ],
+      [
+        "D",
+        "K",
+        3
+      ],
+      [
+        "C",
+        "0",
+        3
+      ],
+      [
+        "E",
+        "B",
+        3
+      ],
+      [
+        "N",
+        "K",
+        3
+      ],
+      [
+        "4",
+        "0",
+        3
+      ],
+      [
+        "1",
+        "5",
+        3
+      ],
+      [
+        "N",
+        "W",
+        2
+      ],
+      [
+        "H",
+        "E",
+        2
+      ],
+      [
+        "T",
+        "Y",
+        2
+      ],
+      [
+        "6",
+        "4",
+        2
+      ],
+      [
+        "B",
+        "J",
+        2
+      ],
+      [
+        "0",
+        "9",
+        2
+      ],
+      [
+        "B",
+        "8",
+        2
+      ],
+      [
+        "0",
+        "6",
+        2
+      ],
+      [
+        "P",
+        "R",
+        2
+      ],
+      [
+        "6",
+        "8",
+        2
+      ],
+      [
+        "9",
+        "5",
+        2
+      ],
+      [
+        "A",
+        "4",
+        2
+      ],
+      [
+        "2",
+        "3",
+        2
+      ],
+      [
+        "8",
+        "6",
+        1
+      ],
+      [
+        "N",
+        "A",
+        1
+      ],
+      [
+        "N",
+        "I",
+        1
+      ],
+      [
+        "8",
+        "1",
+        1
+      ],
+      [
+        "M",
+        "C",
+        1
+      ],
+      [
+        "U",
+        "T",
+        1
+      ],
+      [
+        "7",
+        "2",
+        1
+      ],
+      [
+        "U",
+        "W",
+        1
+      ],
+      [
+        "D",
+        "P",
+        1
+      ],
+      [
+        "9",
+        "8",
+        1
+      ],
+      [
+        "H",
+        "L",
+        1
+      ],
+      [
+        "N",
+        "R",
+        1
+      ],
+      [
+        "W",
+        "M",
+        1
+      ],
+      [
+        "B",
+        "H",
+        1
+      ],
+      [
+        "5",
+        "S",
+        1
+      ],
+      [
+        "3",
+        "5",
+        1
+      ],
+      [
+        "9",
+        "3",
+        1
+      ],
+      [
+        "0",
+        "8",
+        1
+      ],
+      [
+        "H",
+        "F",
+        1
+      ],
+      [
+        "1",
+        "I",
+        1
+      ],
+      [
+        "0",
+        "B",
+        1
+      ],
+      [
+        "4",
+        "3",
+        1
+      ],
+      [
+        "F",
+        "R",
+        1
+      ],
+      [
+        "1",
+        "2",
+        1
+      ],
+      [
+        "N",
+        "M",
+        1
+      ],
+      [
+        "9",
+        "7",
+        1
+      ],
+      [
+        "4",
+        "A",
+        1
+      ],
+      [
+        "A",
+        "I",
+        1
+      ],
+      [
+        "6",
+        "5",
+        1
+      ],
+      [
+        "8",
+        "B",
+        1
+      ],
+      [
+        "M",
+        "D",
+        1
+      ],
+      [
+        "5",
+        "3",
+        1
+      ],
+      [
+        "O",
+        "R",
+        1
+      ],
+      [
+        "O",
+        "D",
+        1
+      ],
+      [
+        "7",
+        "5",
+        1
+      ],
+      [
+        "4",
+        "2",
+        1
+      ],
+      [
+        "F",
+        "Y",
+        1
+      ]
+    ]
+  },
+  "test": {
+    "crops": 267,
+    "error_types": {
+      "exact": 202,
+      "dropped last character": 2,
+      "dropped other character(s)": 1,
+      "one substitution": 31,
+      "several substitutions": 13,
+      "insertion(s)": 1,
+      "mixed": 8,
+      "different plate": 9
+    },
+    "edit_positions": {
+      "last": 24,
+      "number": 29,
+      "middle": 29,
+      "state": 16
+    },
+    "format_correction": {
+      "unchanged": 256,
+      "fixed": 1,
+      "broken": 1,
+      "changed, still wrong": 9
+    },
+    "confusion_pairs": [
+      [
+        "T",
+        "I",
+        4
+      ],
+      [
+        "4",
+        "2",
+        3
+      ],
+      [
+        "0",
+        "2",
+        2
+      ],
+      [
+        "9",
+        "2",
+        2
+      ],
+      [
+        "8",
+        "6",
+        2
+      ],
+      [
+        "T",
+        "M",
+        2
+      ],
+      [
+        "0",
+        "8",
+        2
+      ],
+      [
+        "5",
+        "6",
+        2
+      ],
+      [
+        "H",
+        "M",
+        2
+      ],
+      [
+        "3",
+        "9",
+        2
+      ],
+      [
+        "5",
+        "9",
+        2
+      ],
+      [
+        "Q",
+        "O",
+        2
+      ],
+      [
+        "D",
+        "B",
+        1
+      ],
+      [
+        "T",
+        "Y",
+        1
+      ],
+      [
+        "B",
+        "E",
+        1
+      ],
+      [
+        "T",
+        "V",
+        1
+      ],
+      [
+        "8",
+        "1",
+        1
+      ],
+      [
+        "8",
+        "0",
+        1
+      ],
+      [
+        "4",
+        "0",
+        1
+      ],
+      [
+        "9",
+        "3",
+        1
+      ],
+      [
+        "Y",
+        "V",
+        1
+      ],
+      [
+        "M",
+        "W",
+        1
+      ],
+      [
+        "9",
+        "8",
+        1
+      ],
+      [
+        "7",
+        "2",
+        1
+      ],
+      [
+        "O",
+        "0",
+        1
+      ],
+      [
+        "N",
+        "A",
+        1
+      ],
+      [
+        "9",
+        "7",
+        1
+      ],
+      [
+        "A",
+        "1",
+        1
+      ],
+      [
+        "L",
+        "1",
+        1
+      ],
+      [
+        "2",
+        "Q",
+        1
+      ],
+      [
+        "4",
+        "A",
+        1
+      ],
+      [
+        "1",
+        "3",
+        1
+      ],
+      [
+        "7",
+        "1",
+        1
+      ],
+      [
+        "C",
+        "X",
+        1
+      ],
+      [
+        "R",
+        "0",
+        1
+      ],
+      [
+        "N",
+        "H",
+        1
+      ],
+      [
+        "N",
+        "W",
+        1
+      ],
+      [
+        "A",
+        "U",
+        1
+      ],
+      [
+        "6",
+        "9",
+        1
+      ],
+      [
+        "B",
+        "T",
+        1
+      ],
+      [
+        "3",
+        "1",
+        1
+      ],
+      [
+        "3",
+        "2",
+        1
+      ],
+      [
+        "C",
+        "M",
+        1
+      ],
+      [
+        "3",
+        "0",
+        1
+      ],
+      [
+        "G",
+        "C",
+        1
+      ],
+      [
+        "R",
+        "K",
+        1
+      ],
+      [
+        "6",
+        "8",
+        1
+      ],
+      [
+        "G",
+        "M",
+        1
+      ],
+      [
+        "A",
+        "H",
+        1
+      ],
+      [
+        "5",
+        "S",
+        1
+      ],
+      [
+        "4",
+        "9",
+        1
+      ],
+      [
+        "W",
+        "T",
+        1
+      ],
+      [
+        "3",
+        "5",
+        1
+      ],
+      [
+        "J",
+        "M",
+        1
+      ],
+      [
+        "L",
+        "K",
+        1
+      ],
+      [
+        "1",
+        "8",
+        1
+      ],
+      [
+        "1",
+        "0",
+        1
+      ],
+      [
+        "3",
+        "Z",
+        1
+      ],
+      [
+        "9",
+        "0",
+        1
+      ],
+      [
+        "B",
+        "8",
+        1
+      ],
+      [
+        "N",
+        "M",
+        1
+      ],
+      [
+        "O",
+        "B",
+        1
+      ],
+      [
+        "F",
+        "Z",
+        1
+      ],
+      [
+        "P",
+        "F",
+        1
+      ],
+      [
+        "2",
+        "7",
+        1
+      ],
+      [
+        "1",
+        "T",
+        1
+      ],
+      [
+        "5",
+        "7",
+        1
+      ],
+      [
+        "U",
+        "M",
+        1
+      ],
+      [
+        "0",
+        "D",
+        1
+      ]
+    ]
+  },
+  "label_audit": {
+    "min_conf": 0.9,
+    "summary": {
+      "look-alike typed in the label": {
+        "crops": 2,
+        "labels": 2
+      },
+      "label is not a legal plate": {
+        "crops": 9,
+        "labels": 9
+      },
+      "crop shows another plate": {
+        "crops": 1,
+        "labels": 1
+      },
+      "confident different read": {
+        "crops": 6,
+        "labels": 6
+      }
+    },
+    "suspects": [
+      {
+        "split": "val",
+        "image": "val/01387_JK1182360.png",
+        "label": "JK1182360",
+        "raw": "JK11B2360",
+        "read": "JK11B2360",
+        "conf": 0.994,
+        "reason": "look-alike typed in the label",
+        "edits": 1,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/01700_WB02A03017.png",
+        "label": "WB02A03017",
+        "raw": "WB02AD3017",
+        "read": "WB02AD3017",
+        "conf": 0.986,
+        "reason": "look-alike typed in the label",
+        "edits": 1,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/00856_MH20TC189B.png",
+        "label": "MH20TC189B",
+        "raw": "MH20TC183B",
+        "read": "MH20TC1838",
+        "conf": 0.974,
+        "reason": "label is not a legal plate",
+        "edits": 2,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/00734_TERRANO.png",
+        "label": "TERRANO",
+        "raw": "TERRAN0",
+        "read": "TERRAN0",
+        "conf": 0.862,
+        "reason": "label is not a legal plate",
+        "edits": 1,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/01118_AP310U7562.png",
+        "label": "AP310U7562",
+        "raw": "AP31BU7582",
+        "read": "AP31BU7582",
+        "conf": 0.819,
+        "reason": "label is not a legal plate",
+        "edits": 2,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/01196_BF06P00006.png",
+        "label": "BF06P00006",
+        "raw": "BR06P00008",
+        "read": "BR06PO0008",
+        "conf": 0.536,
+        "reason": "label is not a legal plate",
+        "edits": 3,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/01100_MH02B16890.png",
+        "label": "MH02B16890",
+        "raw": "MF02B16890",
+        "read": "MF02BI6890",
+        "conf": 0.477,
+        "reason": "label is not a legal plate",
+        "edits": 2,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/01572_PB2313752.png",
+        "label": "PB2313752",
+        "raw": "FB73T9752",
+        "read": "FB73T9752",
+        "conf": 0.447,
+        "reason": "label is not a legal plate",
+        "edits": 4,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/00751_W0BNP300.png",
+        "label": "W0BNP300",
+        "raw": "WOBRP3000",
+        "read": "WO8RP3000",
+        "conf": 0.408,
+        "reason": "label is not a legal plate",
+        "edits": 4,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/00771_MH14TC206AN.png",
+        "label": "MH14TC206AN",
+        "raw": "MH14TC2061",
+        "read": "MH14TC2061",
+        "conf": 0.312,
+        "reason": "label is not a legal plate",
+        "edits": 2,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/00864_DEVANAGRI.png",
+        "label": "DEVANAGRI",
+        "raw": "K960UU",
+        "read": "K960UU",
+        "conf": 0.133,
+        "reason": "label is not a legal plate",
+        "edits": 9,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/00179_MH47AV6753.png",
+        "label": "MH47AV6753",
+        "raw": "MH12FT9458",
+        "read": "MH12FT9458",
+        "conf": 0.992,
+        "reason": "crop shows another plate",
+        "edits": 7,
+        "agree": 7
+      },
+      {
+        "split": "test",
+        "image": "test/00422_MH02ER9194.png",
+        "label": "MH02ER9194",
+        "raw": "MH02ER9192",
+        "read": "MH02ER9192",
+        "conf": 0.976,
+        "reason": "confident different read",
+        "edits": 1,
+        "agree": 17
+      },
+      {
+        "split": "test",
+        "image": "test/00547_MH01CY6333.png",
+        "label": "MH01CY6333",
+        "raw": "MH01CV6333",
+        "read": "MH01CV6333",
+        "conf": 0.958,
+        "reason": "confident different read",
+        "edits": 1,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/01623_TN19Q0835.png",
+        "label": "TN19Q0835",
+        "raw": "TN1900835",
+        "read": "TN19O0835",
+        "conf": 0.953,
+        "reason": "confident different read",
+        "edits": 1,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/01614_TN63BV7954.png",
+        "label": "TN63BV7954",
+        "raw": "TN63BV7952",
+        "read": "TN63BV7952",
+        "conf": 0.947,
+        "reason": "confident different read",
+        "edits": 1,
+        "agree": 0
+      },
+      {
+        "split": "val",
+        "image": "val/00000_MH01DE2780.png",
+        "label": "MH01DE2780",
+        "raw": "MH01DC2700",
+        "read": "MH01DC2700",
+        "conf": 0.909,
+        "reason": "confident different read",
+        "edits": 2,
+        "agree": 0
+      },
+      {
+        "split": "test",
+        "image": "test/01668_UP45Q3028.png",
+        "label": "UP45Q3028",
+        "raw": "UP4503028",
+        "read": "UP45O3028",
+        "conf": 0.907,
+        "reason": "confident different read",
+        "edits": 1,
+        "agree": 0
+      }
+    ]
+  }
+}
