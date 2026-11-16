@@ -60,6 +60,7 @@
   .feed img { display: block; width: 100%; background: #000; min-height: 120px; }
   .feed div { padding: 4px 8px; font-size: 12px; display: flex; justify-content: space-between; }
   .feed.off { border-color: var(--violet); } .feed.off img { opacity: .3; }
+  .feed .ck { color: var(--muted, #9aa); } .feed .ck.skew { color: var(--amber, #f5b942); font-weight: 600; }
   input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 7px;
                      padding: 7px 9px; font: 600 14px ui-monospace, monospace; letter-spacing: 1px; width: 150px; }
   #reads { max-height: 210px; overflow-y: auto; }
@@ -325,6 +326,11 @@ const attrLine = r => {
   return seen || checks ? `<div class="sub">${seen || 'colour ?'}${checks ? ' · ' + checks : ''}${lowered}</div>` : '';
 };
 // plate length check (edge/plate_length.py): a read that may be cut at the OCR's 10 character slots
+// a camera node's clock against the control room's (estimated from its heartbeats, server/clocks.py);
+// offset > 0 means the node's clock is behind
+const clockText = e => e.clock_offset == null ? 'clock ?'
+  : Math.abs(e.clock_offset) < 0.5 ? 'clock ok'
+  : `clock ${Math.abs(e.clock_offset).toFixed(1)} s ${e.clock_offset > 0 ? 'behind' : 'ahead'}`;
 const reviewLine = r => r.review
   ? `<div class="sub review">${r.truncated ? '⚠ ' : ''}${r.review}${r.truncated ? ' · matched as a prefix' : ''}</div>` : '';
 
@@ -367,14 +373,19 @@ function render(s) {
   layers.edges.clearLayers();
   for (const e of s.edges || []) L.marker(ll(e.lonlat), { icon: L.divIcon({ className: 'cam-icon',
       html: '📷 ' + e.name, iconSize: [70, 18] }), zIndexOffset: 900 })
-    .bindTooltip(`${e.name} at junction ${e.junction} · ${e.reads} reads, ${e.matches} matches${e.online ? '' : ' · OFFLINE'}`)
+    .bindTooltip(`${e.name} at junction ${e.junction} · ${e.reads} reads, ${e.matches} matches · ${clockText(e)}${e.online ? '' : ' · OFFLINE'}`)
     .addTo(layers.edges);
   const fk = (s.edges || []).map(e => e.name + (e.online ? 1 : 0)).join('|');
   if (fk !== feedKey) {
     feedKey = fk;
     document.getElementById('feeds').innerHTML = (s.edges || []).map(e =>
       `<div class="feed ${e.online ? '' : 'off'}" id="feed-${e.name}"><img src="/api/edge/stream/${encodeURIComponent(e.name)}">
-       <div><span>📷 ${e.name} · junction ${e.junction}</span><span class="st">${e.online ? 'LIVE' : 'OFFLINE'}</span></div></div>`).join('');
+       <div><span>📷 ${e.name} · junction ${e.junction}</span><span class="ck"></span><span class="st">${e.online ? 'LIVE' : 'OFFLINE'}</span></div></div>`).join('');
+  }
+  // clock offset per camera: refreshed on every snapshot without rebuilding the tiles (that would restart the video)
+  for (const e of s.edges || []) {
+    const ck = document.querySelector(`#feed-${CSS.escape(e.name)} .ck`);
+    if (ck) { ck.textContent = clockText(e); ck.classList.toggle('skew', !!e.clock_skewed); }
   }
   document.getElementById('reads').innerHTML = (s.reads || []).slice().reverse().map(r =>
     `<div class="rd"><img src="/api/thumb/read/${r.rid}" onerror="this.style.visibility='hidden'">
