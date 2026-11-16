@@ -65,7 +65,7 @@ Mark an item `[x]` when it is done and add the date.
       `reports/RESULTS.md` from an actual run; README note.
 
 ## Reliability (continued)
-- [ ] **Clock-skew handling** — the README assumes node clocks are roughly in sync (NTP) and only clamps a
+- [x] (2026-11-16) **Clock-skew handling** — the README assumes node clocks are roughly in sync (NTP) and only clamps a
       future capture time to "now". Estimate each camera's clock offset from its heartbeats (server receive
       time vs. node send time, smoothed), correct sighting capture times before the belief update, show the
       offset on the dashboard camera list. Tests with deliberately skewed nodes; README update.

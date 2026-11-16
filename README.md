@@ -41,7 +41,7 @@ planner/   roadgraph.py   OSM road graph, own Dijkstra (binary heap) and Yen's K
            sumo_graph.py  planner graph from a SUMO network
            sumo_sim.py    SUMO/TraCI replication with real traffic (pilot: reports/RESULTS.md section 9)
 server/    control_room.py (open cases, gate, belief, shared plan, officer approval, alerts, late-sighting replay),
-           messages.py (signed, numbered edge messages), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
+           messages.py (signed, numbered edge messages), clocks.py (camera clock offset from heartbeats), db.py (SQLite store), app.py (FastAPI + WebSocket), static/index.html (Leaflet dashboard), static/unit.html (patrol phone)
 edge/      camera_node.py (webcam / phone / video -> YOLO26n -> ByteTrack -> OCR vote -> hotlist -> control room),
            attributes.py (colour / type check), plate_length.py (reads cut at the OCR's 10 slots)
 scripts/   prepare_data.py, train_plate_detector.py, eval_ocr_baseline.py, indian_plate_format.py,
@@ -55,6 +55,7 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_db.py, test_reconstruct.py, test_control_room_records.py (registry, routes, alerts),
            test_sumo_stops.py (unit stop placement; TraCI part skips without SUMO), test_messages.py,
            test_edge_inbox.py, test_replay.py (signing, duplicates, out-of-order replay),
+           test_clock_skew.py (clock offset from heartbeats, skewed nodes, forged / replayed send times),
            test_multi_case.py, test_control_room_cases.py, test_multi_sim.py (several suspects),
            test_own_city.py (study-area options, $WTW_GRAPH), test_own_photos.py (label checks, group split, report table),
            test_plate_length.py (truncation check, prefix match, fallback read),
@@ -236,7 +237,19 @@ room (`WTW_EDGE_KEY`, or `--key` on the node). The control room
 
 While the control room is unreachable the node keeps up to 2,000 reads, dropping the oldest non-match
 first. Without a key everything still works, unsigned (fine for a tabletop demo, not for a network).
-Node clocks are assumed roughly in sync (NTP); a capture time in the future is clamped to "now".
+**Clock skew.** A capture time is on the node's clock, which may be minutes off (a phone or a board
+without NTP). Every frame a node pushes is also a heartbeat carrying the node's send time (headers
+`X-Sent-At` and, with a key, `X-Sent-Sig` — an HMAC over the camera name and the time). The control room
+compares it with its own receive time (`server/clocks.py`): receive − send = clock offset + network
+delay, and since the delay is never negative, the smallest value over the last 30 s is the offset. That
+minimum ignores slow heartbeats and replayed old ones, and the sliding window follows a clock that drifts
+or is stepped. Capture times are corrected by the offset before the belief update, so two cameras whose
+clocks disagree no longer produce sightings in the wrong order or an "impossible journey" that never
+happened. The dashboard shows each camera's offset on its video tile and map tooltip (`clock ok`,
+`clock 61.0 s ahead`), and the event log notes when a camera is more than 2 s off. A send time with a
+bad signature is ignored (the frame still counts as a sign of life); a node that sends no send time is
+used uncorrected, and a capture time that is still in the future is clamped to "now". The estimate is
+high by the fastest heartbeat's travel time — milliseconds on a LAN.
 
 Perception: `scripts/prepare_data.py` downloads the public datasets; `scripts/read_plates.py <images>`
 runs detector + OCR end to end with the weights in `weights/final/`.
@@ -262,7 +275,8 @@ runs detector + OCR end to end with the weights in `weights/final/`.
 * Done: colour and vehicle-type check on the edge node; hotlist θ chosen on the validation split.
 * Done: 11-character plates — truncation check, fallback read of the plate's right half, prefix match.
 * Done: OCR error analysis (error types, confusion pairs) and label audit on the held-out crops.
-* Next: see [`ROADMAP.md`](ROADMAP.md) — clock-skew handling.
+* Done: clock-skew handling — per-camera clock offset from signed heartbeats, capture times corrected.
+* Next: see [`ROADMAP.md`](ROADMAP.md) — end-to-end smoke test in CI.
 
 ## Data and ethics
 
