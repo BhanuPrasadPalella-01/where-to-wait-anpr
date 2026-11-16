@@ -27,8 +27,9 @@ from planner.reconstruct import reconstruct
 from planner.roadgraph import INF, dijkstra
 from planner.simulate import (DISPATCH, MARGIN, N_PARTICLES, RECALL, STICKY, STICKY_WAITING, Unit, World)
 
+from .clocks import WARN_OFFSET, ClockOffset, describe
 from .db import Database
-from .messages import Deduper, verify
+from .messages import Deduper, check_time, verify
 
 ACK_TIMEOUT = 30.0  # wall-clock seconds before an unacknowledged assignment is flagged to the officer
 DEFAULT_SEVERITY = 3  # a typed plate that is not on the registry
@@ -86,6 +87,7 @@ class ControlRoom:
         self.db = db or Database(":memory:")
         self.edge_key = edge_key  # shared HMAC key; when set, unsigned or altered edge reads are dropped
         self.inbox = Deduper()    # (camera, boot, seq) already processed; survives reset like the cameras
+        self.clocks: dict[str, ClockOffset] = {}  # per camera: clock offset from its heartbeats; survives reset
         self.clock_rate = 1.0     # simulated seconds per wall-clock second (the dashboard's speed setting)
         self.coverage, self.n_units = coverage, n_units
         self._registry, self._registry_t = [], 0.0
@@ -489,7 +491,7 @@ class ControlRoom:
             pool = [v for v in spots["far" if role == "far" else "route"][1:] if v not in used]
             j = pool[0] if pool else self.rng.choice(self.W.junctions)
         self.edges[name] = {"name": name, "junction": j, "role": role, "last_frame": 0.0, "reads": 0,
-                            "matches": 0, "online": True}
+                            "matches": 0, "online": True, "clock_offset": None, "clock_skewed": False}
         self.cameras[j] = Camera(j)
         self.log("camera", f"Edge camera '{name}' online at junction {j} ({role}).")
         return {"junction": j, "lonlat": self.g.xy[j]}
@@ -498,7 +500,9 @@ class ControlRoom:
         """One plate read from an edge node (see server/messages.py for the signed, numbered format).
 
         The sighting time is the capture time, mapped from the node's wall clock onto the simulated
-        clock, so a read that sat in the node's queue lands where it happened, not when it arrived."""
+        clock, so a read that sat in the node's queue lands where it happened, not when it arrived.
+        The node's clock is first corrected by the offset estimated from its heartbeats
+        (server/clocks.py); a capture time that is still in the future is clamped to "now"."""
         if self.edge_key is not None and not verify(r, self.edge_key):
             self.log("flag", f"Edge read claiming to be from {r.get('name')!r} dropped: bad or missing signature.")
             return {"ok": False, "error": "bad signature"}
@@ -508,7 +512,11 @@ class ControlRoom:
         if r.get("seq") is not None and not self.inbox.add(r["name"], str(r.get("boot", "")), int(r["seq"])):
             return {"ok": True, "duplicate": True}
         now = time.time() if now is None else now
-        delay = max(0.0, now - r["captured_at"]) if r.get("captured_at") else 0.0
+        clock = self.clocks.get(r["name"])
+        captured = r.get("captured_at")
+        if captured and clock:
+            captured = clock.correct(captured)
+        delay = max(0.0, now - captured) if captured else 0.0
         t = max(0.0, self.t - delay * self.clock_rate)
         e["reads"] += 1
         self.read_seq = getattr(self, "read_seq", 0) + 1
@@ -551,13 +559,28 @@ class ControlRoom:
             self.log("alert", f"Registered vehicle {matched} seen by {r['name']} (not the active case); stations told.")
         return rec
 
-    def edge_heartbeat(self, name: str, now: float):
+    def edge_heartbeat(self, name: str, now: float, sent_at: str | float | None = None, sig: str | None = None):
+        """A frame arrived from a node: it is alive, and its send time (if it carries one that checks
+        out, server/messages.py check_time) is one more sample for its clock offset."""
         e = self.edges.get(name)
         if e:
             e["last_frame"] = now
             if not e["online"]:
                 e["online"] = True
                 self.set_camera(e["junction"], True)
+            sent = check_time(name, None if sent_at is None else str(sent_at), sig, self.edge_key)
+            if sent is not None:
+                self._clock_sample(e, sent, now)
+
+    def _clock_sample(self, e: dict, sent: float, now: float):
+        off = self.clocks.setdefault(e["name"], ClockOffset()).add(sent, now)
+        e["clock_offset"] = round(off, 2)
+        skewed = abs(off) > WARN_OFFSET
+        if skewed != e["clock_skewed"]:  # log the change once, not every heartbeat
+            e["clock_skewed"] = skewed
+            self.log("camera", f"Camera '{e['name']}' clock is {describe(off)} the control room's; its capture "
+                               f"times are corrected." if skewed else
+                               f"Camera '{e['name']}' clock is back within {WARN_OFFSET:.0f} s of the control room's.")
 
     def check_edges(self, now: float, timeout: float = 5.0):
         for e in self.edges.values():

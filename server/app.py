@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 
 from .control_room import ControlRoom
 from .db import Database
-from .messages import KEY_ENV, load_key
+from .messages import KEY_ENV, TIME_HEADER, TIME_SIG_HEADER, load_key
 from .search import DATA as SEARCH_DATA, SearchIndex
 
 STATIC = Path(__file__).parent / "static"
@@ -307,7 +307,8 @@ async def edge_read(request: Request):
 @app.post("/api/edge/frame/{name}")
 async def edge_frame(name: str, request: Request):
     frames[name] = await request.body()
-    room.edge_heartbeat(name, time.time())
+    # the node's send time rides along in two headers; the control room turns it into a clock offset
+    room.edge_heartbeat(name, time.time(), request.headers.get(TIME_HEADER), request.headers.get(TIME_SIG_HEADER))
     return {"ok": True}
 
 
