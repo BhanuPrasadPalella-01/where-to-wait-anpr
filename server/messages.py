@@ -7,6 +7,9 @@ Every plate read an edge node sends carries
           node and the control room (WTW_EDGE_KEY)
 The control room drops a message whose signature does not check out (forged or altered on the way)
 and one whose (camera, boot, seq) it has already processed (a retry after a lost reply, or a replay).
+A heartbeat (the frame a node pushes several times a second) carries the node's send time in the
+same way: the time as text plus an HMAC over {name, sent_at}. The control room uses it to estimate the
+node's clock offset (server/clocks.py); a send time whose signature does not check out is ignored.
 Only the standard library is used, so edge nodes and the CI tests need nothing extra.
 """
 from __future__ import annotations
@@ -14,11 +17,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 from collections import OrderedDict
 
 KEY_ENV = "WTW_EDGE_KEY"
+TIME_HEADER, TIME_SIG_HEADER = "X-Sent-At", "X-Sent-Sig"  # heartbeat send time and its signature
 
 
 def load_key(value: str | None = None) -> bytes | None:
@@ -43,6 +48,28 @@ def verify(msg: dict, key: bytes) -> bool:
     if not isinstance(sig, str):
         return False
     return hmac.compare_digest(sig, hmac.new(key, canonical(msg), hashlib.sha256).hexdigest())
+
+
+def stamp_time(name: str, sent_at: float, key: bytes | None) -> tuple[str, str]:
+    """Edge side: (send time as text, signature) for one heartbeat; the signature is "" without a key.
+
+    The time travels as text and the text is what is signed, so both sides hash the same bytes."""
+    text = repr(float(sent_at))
+    return text, (sign({"name": name, "sent_at": text}, key)["sig"] if key else "")
+
+
+def check_time(name: str, text: str | None, sig: str | None, key: bytes | None) -> float | None:
+    """Control-room side: the heartbeat's send time, or None if it is missing, malformed or (with a key)
+    not signed by this camera."""
+    if not text:
+        return None
+    if key is not None and not verify({"name": name, "sent_at": text, "sig": sig}, key):
+        return None
+    try:
+        sent = float(text)
+    except ValueError:
+        return None
+    return sent if math.isfinite(sent) else None
 
 
 class Numberer:
