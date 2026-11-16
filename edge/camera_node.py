@@ -38,7 +38,8 @@ from hotlist import Hotlist  # noqa: E402
 from edge.attributes import attribute_factor, body_region, dominant_colour, vehicle_type  # noqa: E402
 from edge import plate_length  # noqa: E402
 from indian_plate_format import correct  # noqa: E402
-from server.messages import KEY_ENV, Numberer, load_key, sign  # noqa: E402
+from server.messages import (KEY_ENV, TIME_HEADER, TIME_SIG_HEADER, Numberer, load_key, sign,  # noqa: E402
+                             stamp_time)
 
 DET = ROOT / "weights" / "final" / "plate_detector_yolo26n.pt"
 OCR = ROOT / "weights" / "final" / "indian_plate_ocr.onnx"
@@ -60,10 +61,11 @@ class Server:
         self.frames: queue.Queue = queue.Queue(maxsize=2)
         threading.Thread(target=self._frame_pusher, daemon=True).start()
 
-    def call(self, path: str, body=None, raw: bytes | None = None, ctype="application/json", timeout=3):
+    def call(self, path: str, body=None, raw: bytes | None = None, ctype="application/json", timeout=3,
+             headers: dict | None = None):
         data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
         req = urllib.request.Request(self.base + path, data=data, method="POST" if data is not None else "GET",
-                                     headers={"Content-Type": ctype})
+                                     headers={"Content-Type": ctype, **(headers or {})})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read() or b"{}")
 
@@ -93,11 +95,18 @@ class Server:
         except queue.Full:
             pass
 
+    def send_frame(self, name: str, jpg: bytes, now: float | None = None):
+        """One frame = one heartbeat. It carries this node's clock at the moment of sending (signed when
+        there is a key), from which the control room estimates the node's clock offset."""
+        sent_at, sig = stamp_time(name, time.time() if now is None else now, self.key)
+        self.call(f"/api/edge/frame/{name}", raw=jpg, ctype="image/jpeg", timeout=2,
+                  headers={TIME_HEADER: sent_at, **({TIME_SIG_HEADER: sig} if sig else {})})
+
     def _frame_pusher(self):
         while True:
             name, jpg = self.frames.get()
             try:
-                self.call(f"/api/edge/frame/{name}", raw=jpg, ctype="image/jpeg", timeout=2)
+                self.send_frame(name, jpg)  # stamped here, not when queued: time in the queue is not network delay
             except Exception:
                 pass
 
