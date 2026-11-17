@@ -8,14 +8,21 @@ number and a reason, and expire automatically (review after 28 days, as the UK A
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import time
 from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "data" / "control_room.db"
+DB_ENV = "WTW_DB"  # another database file for the dashboard server, or ":memory:" (the smoke tests use it)
 EXPIRY_DAYS = 28
 READ_RETENTION_S = 24 * 3600  # plate reads that matched nothing are kept for one day only
+
+
+def default_db_path() -> str | Path:
+    """The store the dashboard server opens: $WTW_DB if set, else data/control_room.db."""
+    return os.environ.get(DB_ENV) or DEFAULT_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vehicles (

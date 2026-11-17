@@ -3,6 +3,8 @@
 Run:  .venv/bin/python -m uvicorn server.app:app --port 8000
 Edge cameras post signed, numbered plate reads to POST /api/edge/read (server/messages.py);
 POST /api/sighting is an unsigned manual entry, refused when WTW_EDGE_KEY is set.
+The map is $WTW_GRAPH (else data/city_graph.json) and the store $WTW_DB (else data/control_room.db),
+so the whole app also runs on a synthetic graph with an in-memory store (tests/test_app_smoke.py).
 """
 from __future__ import annotations
 
@@ -17,14 +19,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, ValidationError
 
 from .control_room import ControlRoom
-from .db import Database
+from .db import Database, default_db_path
 from .messages import KEY_ENV, TIME_HEADER, TIME_SIG_HEADER, load_key
 from .search import DATA as SEARCH_DATA, SearchIndex
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("uvicorn.error")
 app = FastAPI(title="Where to Wait — control room")
-db = Database()  # data/control_room.db: registry, sightings, reads, routes, alerts, audit log
+db = Database(default_db_path())  # registry, sightings, reads, routes, alerts, audit log
 room = ControlRoom(db=db, edge_key=load_key())  # set WTW_EDGE_KEY to require signed edge reads
 search = SearchIndex()  # Vehicle Search page over the four RoundaboutHD cameras
 state = {"speed": 5.0, "running": False, "show_truth": True}
