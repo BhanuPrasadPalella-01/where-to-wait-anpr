@@ -6,3 +6,6 @@ scipy
 networkx
 opencv-python-headless
 pytest
+# end-to-end smoke test of the dashboard server (tests/test_app_smoke.py)
+fastapi
+httpx
