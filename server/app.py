@@ -102,6 +102,7 @@ def search_page():
 
 
 def _need_search():
+    # every /api/search endpoint answers 404 with what to run (not a 500) until the tracks are built
     if not search.ok:
         return JSONResponse({"error": "run scripts/roundabout_fullpass.py first"}, status_code=404)
 
@@ -131,11 +132,15 @@ def search_video(cam: int):
 
 @app.get("/api/search/boxes/{cam}")
 def search_boxes(cam: int, t0: float, t1: float):
-    return _need_search() or search.boxes(cam, t0, min(t1, t0 + 90))
+    if (missing := _need_search()) or cam not in search.tracks:
+        return missing or JSONResponse({"error": f"no camera {cam}"}, status_code=404)
+    return search.boxes(cam, t0, min(t1, t0 + 90))
 
 
 @app.get("/api/search/pick/{cam}")
 def search_pick(cam: int, t: float, x: float, y: float):
+    if (missing := _need_search()) or cam not in search.tracks:
+        return missing or JSONResponse({"error": f"no camera {cam}"}, status_code=404)
     tid = search.pick(cam, t, x, y)
     if tid is None:
         return JSONResponse({"error": "no vehicle there"}, status_code=404)
@@ -144,6 +149,8 @@ def search_pick(cam: int, t: float, x: float, y: float):
 
 @app.get("/api/search/track/{cam}/{track}")
 def search_track(cam: int, track: int):
+    if missing := _need_search():
+        return missing
     if track not in search.tracks.get(cam, {}):
         return JSONResponse({"error": f"C{track} is not a track in camera {cam}"}, status_code=404)
     return search.search_from(cam, track)
@@ -151,17 +158,21 @@ def search_track(cam: int, track: int):
 
 @app.get("/api/search/label/{number}")
 def search_label(number: int):
-    return search.by_label(number)
+    return _need_search() or search.by_label(number)
 
 
 @app.get("/api/search/truth/{vid}")
 def search_truth(vid: int):
+    if missing := _need_search():
+        return missing
     r = search.ground_truth(vid)
     return r if r["stops"] else JSONResponse({"error": f"vehicle {vid} is not in the ground truth"}, status_code=404)
 
 
 @app.get("/api/search/crop/{cam}/{track}")
 def search_crop(cam: int, track: int):
+    if missing := _need_search():
+        return missing
     jpg = search.crop(cam, track)
     return Response(jpg, media_type="image/jpeg") if jpg else JSONResponse({"error": "no crop"}, status_code=404)
 
