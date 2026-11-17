@@ -69,6 +69,6 @@ Mark an item `[x]` when it is done and add the date.
       future capture time to "now". Estimate each camera's clock offset from its heartbeats (server receive
       time vs. node send time, smoothed), correct sighting capture times before the belief update, show the
       offset on the dashboard camera list. Tests with deliberately skewed nodes; README update.
-- [ ] **End-to-end smoke test in CI** — FastAPI `TestClient` test on the synthetic graph: open a case, send
+- [x] (2026-11-17) **End-to-end smoke test in CI** — FastAPI `TestClient` test on the synthetic graph: open a case, send
       signed sightings, approve a plan, query the `/search` endpoints. Runs in the existing graph-free
       GitHub Actions job (no model or map downloads).

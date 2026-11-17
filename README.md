@@ -61,6 +61,8 @@ tests/     test_roadgraph.py (vs NetworkX), test_planner.py (gate, belief, greed
            test_plate_length.py (truncation check, prefix match, fallback read),
            test_ocr_errors.py (edit scripts, error types, label audit rules),
            test_light_deps.py (tested modules import without torch / OCR / OSMnx / SUMO)
+           test_app_smoke.py (end to end through the HTTP API: case, signed reads, approval, alerts, registry,
+           WebSocket, Vehicle Search 404s; the real server on the synthetic grid with an in-memory store)
 .github/   workflows/tests.yml: CI, the unit tests on every push (Python 3.12, requirements-test.txt)
 weights/final/  plate_detector_yolo26n.pt, indian_plate_ocr.onnx (+ config)
 reports/   RESULTS.md, fact_check.md, result tables and raw episode logs (.jsonl)
@@ -85,7 +87,8 @@ How each part of the original design maps to the code:
 
 ### Database
 
-SQLite file `data/control_room.db` (created on first start, not committed). Registered vehicles need a case
+SQLite file `data/control_room.db` (created on first start, not committed; `$WTW_DB` picks another file, or
+`:memory:` for a throwaway store). Registered vehicles need a case
 number, offence and officer, and expire after 28 days. Only hotlist hits are kept long term; plate reads
 that matched nothing are deleted after a day. Every registration, decision, approval and acknowledgement
 is written to the audit log (`GET /api/audit`).
